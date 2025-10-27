@@ -110,16 +110,16 @@ jobs:
           $versionInfo | Out-File -FilePath "version_info.txt" -Encoding UTF8
 
       # PyInstaller로 빌드
-      # - name: Build with PyInstaller
-      #   run: |
-      #     pyinstaller --onefile --windowed --name "ezSLauncher" --clean --uac-admin --version-file "version_info.txt" --icon "./icon/icon.ico" --add-data "./icon/icon_title.ico;./icon" "ezSLauncher.py"
-      #   shell: pwsh
-
-      - name: Build with PyInstaller (Use CMD for Reliable Icon Inject)
+      - name: Build with PyInstaller
         run: |
-          # PyInstaller 명령 자체는 셸 명령이므로, 셸을 cmd로 변경
           pyinstaller --onefile --windowed --name "ezSLauncher" --clean --uac-admin --version-file "version_info.txt" --icon "icon\icon.ico" --add-data "icon\icon_title.ico;icon" "ezSLauncher.py"
-        shell: cmd
+        shell: pwsh
+
+      # - name: Build with PyInstaller (Use CMD for Reliable Icon Inject)
+      #   run: |
+      #     # PyInstaller 명령 자체는 셸 명령이므로, 셸을 cmd로 변경
+      #     pyinstaller --onefile --windowed --name "ezSLauncher" --clean --uac-admin --version-file "version_info.txt" --icon "icon\icon.ico" --add-data "icon\icon_title.ico;icon" "ezSLauncher.py"
+      #   shell: cmd
 
       # VirusTotal 스캔 결과 URL 생성 (선택적)
       - name: Generate file hash

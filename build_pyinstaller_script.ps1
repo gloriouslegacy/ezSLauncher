@@ -27,10 +27,8 @@ Write-Host "Done!"
 Write-Host ""
 # -----------------------------------------------------------------------------
 
-# pyinstaller --onefile --windowed --name $ScriptName --clean --uac-admin --version-file "version_info.txt" --icon ".\icon\icon.ico" --add-data ".\icon\icon_title.ico;.\icon" $ScriptName
+pyinstaller --onefile --windowed --name $ScriptName --clean --uac-admin --version-file "version_info.txt" --icon ".\icon\icon.ico" --add-data ".\icon\icon_title.ico;.\icon" $ScriptName
 
-$iconPath = Join-Path $PSScriptRoot "icon\icon.ico"
-$addData = ".\icon\icon_title.ico;.\icon"
-    
-pyinstaller --onefile --windowed --name $ScriptName --clean --uac-admin --version-file "version_info.txt" --icon "$iconPath" --add-data "$addData" $ScriptName
+
+
 
