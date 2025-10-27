@@ -60,8 +60,17 @@ jobs:
             Write-Host "⚠ icon_title.ico NOT found (optional)"
           }
           
+          Write-Host "`n=== Language Files Check ==="
+          if (Test-Path "./lang_ko.ini") {
+            Write-Host "✓ lang_ko.ini found"
+            $langSize = (Get-Item "./lang_ko.ini").Length
+            Write-Host "  Size: $langSize bytes"
+          } else {
+            Write-Host "⚠ lang_ko.ini NOT found - Korean language will not be available"
+          }
+          
           Write-Host "`n=== Directory Structure ==="
-          Get-ChildItem -Path . -Recurse -Include *.ico | ForEach-Object {
+          Get-ChildItem -Path . -Recurse -Include *.ico,*.ini | ForEach-Object {
             Write-Host "  $($_.FullName)"
           }
 
@@ -149,6 +158,13 @@ jobs:
           Write-Host "Icon path: $iconPath"
           Write-Host "Icon exists: $(Test-Path 'icon\icon.ico')"
           
+          # Check if lang_ko.ini exists
+          if (Test-Path "lang_ko.ini") {
+            Write-Host "✓ lang_ko.ini found"
+          } else {
+            Write-Host "⚠ lang_ko.ini NOT found - Korean language will not be available"
+          }
+          
           # PyInstaller for portable - everything in one EXE
           pyinstaller --onefile `
             --windowed `
@@ -181,6 +197,13 @@ jobs:
           
           $iconPath = "icon/icon.ico"
           
+          # Check if lang_ko.ini exists
+          if (Test-Path "lang_ko.ini") {
+            Write-Host "✓ lang_ko.ini found"
+          } else {
+            Write-Host "⚠ lang_ko.ini NOT found - Korean language will not be available"
+          }
+          
           # Clean previous build
           if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
           
@@ -209,6 +232,85 @@ jobs:
             
             Write-Host "`n=== Installer Contents ==="
             Get-ChildItem "dist/ezSLauncher" -Recurse | Format-Table Name, Length
+            
+            # Verify lang_ko.ini is included
+            if (Test-Path "dist/ezSLauncher/lang_ko.ini") {
+              Write-Host "✓ lang_ko.ini included in installer"
+            } else {
+              Write-Host "⚠ lang_ko.ini NOT found in installer"
+            }
+          }
+
+      # Install Inno Setup
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          Write-Host "=== Installing Inno Setup ==="
+          
+          # Download Inno Setup
+          $innoUrl = "https://jrsoftware.org/download.php/is.exe"
+          $innoInstaller = "innosetup-installer.exe"
+          
+          Write-Host "Downloading Inno Setup..."
+          Invoke-WebRequest -Uri $innoUrl -OutFile $innoInstaller
+          
+          # Install silently
+          Write-Host "Installing Inno Setup..."
+          Start-Process -FilePath $innoInstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
+          
+          # Verify installation
+          $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (Test-Path $isccPath) {
+            Write-Host "✓ Inno Setup installed successfully"
+            & $isccPath /?
+          } else {
+            Write-Host "✗ Inno Setup installation failed"
+            exit 1
+          }
+
+      # Create Windows Installer with Setup Wizard
+      - name: Create Setup Wizard Installer
+        shell: pwsh
+        run: |
+          Write-Host "=== Creating Setup Wizard Installer ==="
+          
+          $version = "${{ steps.vars.outputs.version }}"
+          $versionClean = $version -replace '-.*',''
+          
+          # Update version in ISS script
+          $issContent = Get-Content "ezSLauncher_setup.iss" -Raw
+          $issContent = $issContent -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$versionClean`""
+          $issContent | Set-Content "ezSLauncher_setup.iss" -Encoding UTF8
+          
+          Write-Host "Version set to: $versionClean"
+          
+          # Compile with Inno Setup
+          $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          
+          Write-Host "Compiling installer..."
+          & $isccPath "ezSLauncher_setup.iss"
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "✗ Inno Setup compilation failed"
+            exit 1
+          }
+          
+          Write-Host "✓ Setup wizard installer created"
+          
+          # Verify output
+          $setupFile = Get-ChildItem "installer_output" -Filter "ezSLauncher_Setup_*.exe" | Select-Object -First 1
+          if ($setupFile) {
+            $size = $setupFile.Length / 1MB
+            Write-Host "✓ Setup file: $($setupFile.Name)"
+            Write-Host "  Size: $([math]::Round($size, 2)) MB"
+            
+            # Rename to simpler name
+            $newName = "ezSLauncher_Setup.exe"
+            Copy-Item $setupFile.FullName -Destination $newName
+            Write-Host "✓ Copied to: $newName"
+          } else {
+            Write-Host "✗ Setup file not found"
+            exit 1
           }
 
       # Verify built executables
@@ -293,44 +395,102 @@ jobs:
           # Package Portable version
           Write-Host "Packaging Portable..."
           Copy-Item "dist/ezSLauncher_Portable.exe" "release/"
+          
+          # Copy lang_ko.ini to release folder for portable version
+          if (Test-Path "lang_ko.ini") {
+            Copy-Item "lang_ko.ini" "release/"
+            Write-Host "✓ lang_ko.ini added to portable package"
+          }
+          
           if (Test-Path "README.md") { Copy-Item "README.md" "release/README_Portable.txt" }
           if (Test-Path "LICENSE") { Copy-Item "LICENSE" "release/" }
           
-          Compress-Archive -Path "release/ezSLauncher_Portable.exe", "release/README_Portable.txt" `
-            -DestinationPath "ezSLauncher_Portable.zip" -Force
+          # Create README for portable
+          @"
+          ezSLauncher - Portable Version
+          
+          This is the portable version in a single executable file.
+          
+          Files included:
+          - ezSLauncher_Portable.exe (main program)
+          - lang_ko.ini (Korean language file - must be in same folder as EXE)
+          - README_Portable.txt (this file)
+          
+          To run:
+          1. Place all files in the same folder
+          2. Run ezSLauncher_Portable.exe
+          
+          Language Support:
+          - English is built-in (default)
+          - Korean requires lang_ko.ini file in the same folder as the EXE
+          - To switch language: Menu → Language → 한국어
+          
+          For an installer with setup wizard, download ezSLauncher_Setup.exe instead.
+          "@ | Out-File -FilePath "release/README_Portable.txt" -Encoding UTF8
+          
+          Compress-Archive -Path "release/*" -DestinationPath "ezSLauncher_Portable.zip" -Force
           
           Write-Host "✓ Portable package created"
+          Write-Host "  Contents: ezSLauncher_Portable.exe, lang_ko.ini, README_Portable.txt"
           
-          # Package Installer version
-          Write-Host "Packaging Installer..."
+          # Package Manual Install version (ZIP)
+          Write-Host "Packaging Manual Install ZIP..."
           Remove-Item "release/*" -Force -ErrorAction SilentlyContinue
           
           Copy-Item -Path "dist/ezSLauncher/*" -Destination "release/" -Recurse
           if (Test-Path "README.md") { Copy-Item "README.md" "release/README.txt" }
           if (Test-Path "LICENSE") { Copy-Item "LICENSE" "release/" }
           
-          # Create README for installer
+          # Create README for manual install
           @"
-          ezSLauncher - Installer Version
+          ezSLauncher - Manual Install Version
           
-          This is the installer version with all dependencies in separate files.
+          This is the manual installation version with all files in a folder.
           
-          To run:
-          1. Extract all files to a folder
+          To install:
+          1. Extract all files to a folder (e.g., C:\Program Files\ezSLauncher)
           2. Run ezSLauncher.exe
+          3. (Optional) Create a shortcut on your desktop
           
-          For a single-file version, download ezSLauncher_Portable.zip instead.
-          "@ | Out-File -FilePath "release/README_INSTALLER.txt" -Encoding UTF8
+          Language Support:
+          - English is built-in (default)
+          - Korean requires lang_ko.ini file (included in this package)
+          - To switch language: Menu → Language → 한국어
           
-          Compress-Archive -Path "release/*" -DestinationPath "ezSLauncher_Installer.zip" -Force
+          For easier installation with setup wizard, download ezSLauncher_Setup.exe instead.
+          "@ | Out-File -FilePath "release/README_MANUAL.txt" -Encoding UTF8
           
-          Write-Host "✓ Installer package created"
+          Compress-Archive -Path "release/*" -DestinationPath "ezSLauncher_Manual.zip" -Force
+          
+          Write-Host "✓ Manual install package created"
+          
+          # Setup wizard installer is already created (ezSLauncher_Setup.exe)
+          if (Test-Path "ezSLauncher_Setup.exe") {
+            Write-Host "✓ Setup wizard installer available"
+            $setupSize = (Get-Item "ezSLauncher_Setup.exe").Length / 1MB
+            Write-Host "  Size: $([math]::Round($setupSize, 2)) MB"
+          }
           
           Write-Host "`n=== Package Sizes ==="
           $portableSize = (Get-Item "ezSLauncher_Portable.zip").Length / 1MB
-          $installerSize = (Get-Item "ezSLauncher_Installer.zip").Length / 1MB
-          Write-Host "Portable: $([math]::Round($portableSize, 2)) MB"
-          Write-Host "Installer: $([math]::Round($installerSize, 2)) MB"
+          $manualSize = (Get-Item "ezSLauncher_Manual.zip").Length / 1MB
+          Write-Host "Portable ZIP: $([math]::Round($portableSize, 2)) MB"
+          Write-Host "Manual ZIP: $([math]::Round($manualSize, 2)) MB"
+          if (Test-Path "ezSLauncher_Setup.exe") {
+            $setupSize = (Get-Item "ezSLauncher_Setup.exe").Length / 1MB
+            Write-Host "Setup Wizard: $([math]::Round($setupSize, 2)) MB"
+          }
+          
+          Write-Host "`n=== Verifying Package Contents ==="
+          Write-Host "Portable ZIP contents:"
+          Expand-Archive -Path "ezSLauncher_Portable.zip" -DestinationPath "temp_verify_portable" -Force
+          Get-ChildItem "temp_verify_portable" | Format-Table Name, Length
+          Remove-Item -Recurse -Force "temp_verify_portable"
+          
+          Write-Host "`nManual ZIP contents:"
+          Expand-Archive -Path "ezSLauncher_Manual.zip" -DestinationPath "temp_verify_manual" -Force
+          Get-ChildItem "temp_verify_manual" -Recurse | Where-Object { $_.Name -match '\.(exe|ini|txt)$' } | Format-Table Name, Length
+          Remove-Item -Recurse -Force "temp_verify_manual"
 
       # Create GitHub Release
       - name: Create GitHub Release
@@ -345,23 +505,48 @@ jobs:
 
             ## 📥 Download Options
 
-            ### 🚀 Portable Version (Recommended)
+            ### 🎯 Setup Wizard (Recommended for most users)
+            - **File**: `ezSLauncher_Setup.exe`
+            - **Size**: ~20-25 MB
+            - **Description**: Windows installer with setup wizard
+            - **Features**:
+              - ✅ Guided installation wizard
+              - ✅ Automatic shortcut creation
+              - ✅ Start Menu integration
+              - ✅ Easy uninstall via Control Panel
+              - ✅ Installs to Program Files
+            - **Usage**: 
+              1. Download `ezSLauncher_Setup.exe`
+              2. Run the installer
+              3. Follow the setup wizard
+              4. Done!
+            
+            ### 🚀 Portable Version
             - **File**: `ezSLauncher_Portable.zip`
             - **Size**: ~15-20 MB
             - **Description**: Single executable file, no installation needed
+            - **Features**:
+              - ✅ No installation required
+              - ✅ Run from USB drive
+              - ✅ Easy to move/copy
+              - ✅ No registry changes
             - **Usage**: 
               1. Download and extract
-              2. Run `ezSLauncher_Portable.exe`
-            - **Pros**: No installation, easy to move, use from USB drive
+              2. Keep `ezSLauncher_Portable.exe` and `lang_ko.ini` together
+              3. Run `ezSLauncher_Portable.exe`
             
-            ### 📂 Installer Version
-            - **File**: `ezSLauncher_Installer.zip`
+            ### 📂 Manual Install (Advanced)
+            - **File**: `ezSLauncher_Manual.zip`
             - **Size**: ~20-25 MB
-            - **Description**: Multiple files in a folder structure
+            - **Description**: Folder with all files for manual installation
+            - **Features**:
+              - ✅ Full control over installation location
+              - ✅ Faster startup than portable
+              - ✅ Easier debugging
             - **Usage**:
               1. Download and extract all files
-              2. Run `ezSLauncher.exe`
-            - **Pros**: Faster startup, easier to debug
+              2. Place in desired folder
+              3. Run `ezSLauncher.exe`
 
             ## ✨ Features
             
@@ -371,6 +556,7 @@ jobs:
             - 🌐 Multi-language (English, Korean)
             - ⚡ Execute files with admin rights
             - 📝 Rename, delete, create shortcuts
+            - 🔗 Open with custom programs
             - 💾 Export results to CSV
             - 🎨 Custom icons and modern UI
 
@@ -393,19 +579,27 @@ jobs:
 
             ## 💻 System Requirements
 
-            - Windows 10 or Windows 11
+            - Windows 10 (build 19041+) or Windows 11
             - Administrator privileges (optional, for some features)
-            - ~20MB free disk space
+            - ~30MB free disk space (setup wizard)
+            - ~20MB free disk space (portable/manual)
 
             ## 🌍 Language Support
 
             - English (default)
             - 한국어 (Korean) - Use Language menu to switch
 
-            ## 🛠️ Known Issues
+            ## 🛠️ Installation Methods Comparison
 
-            - First run may be slow while Windows scans the file
-            - Some antivirus software may flag it (false positive)
+            | Feature | Setup Wizard | Portable | Manual |
+            |---------|-------------|----------|--------|
+            | Ease of use | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
+            | Start Menu | ✅ | ❌ | ❌ |
+            | Desktop shortcut | ✅ | Manual | Manual |
+            | Auto-updates | Future | ❌ | ❌ |
+            | Uninstall | Easy | Delete files | Delete files |
+            | USB portable | ❌ | ✅ | ✅ |
+            | File size | Medium | Small | Medium |
 
             ## 📝 Changelog
 
@@ -419,12 +613,14 @@ jobs:
             ---
             
             **Which version should I download?**
-            - For most users: **Portable version** (single file, easy to use)
-            - For debugging or slower systems: **Installer version** (faster startup)
+            - **First time user?** → Setup Wizard (easiest)
+            - **Want portability?** → Portable version (USB-friendly)
+            - **Advanced user?** → Manual install (full control)
 
           files: |
+            ezSLauncher_Setup.exe
             ezSLauncher_Portable.zip
-            ezSLauncher_Installer.zip
+            ezSLauncher_Manual.zip
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
