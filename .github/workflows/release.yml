@@ -268,41 +268,153 @@ jobs:
             exit 1
           }
 
+      # Create Inno Setup Script
+      - name: Create Inno Setup Script
+        shell: pwsh
+        run: |
+          Write-Host "=== Creating Inno Setup Script ==="
+          
+          $version = "${{ steps.vars.outputs.version }}"
+          $versionClean = $version -replace '-.*',''
+          
+          # Create ISS file content
+          $issContent = @"
+; ezSLauncher Inno Setup Script
+; Creates Windows installer with setup wizard
+
+#define MyAppName "ezSLauncher"
+#define MyAppVersion "$versionClean"
+#define MyAppPublisher "ez"
+#define MyAppURL "https://github.com/gloriouslegacy/ezSLauncher"
+#define MyAppExeName "ezSLauncher.exe"
+
+[Setup]
+; App information
+AppId={{E7A5C4B2-8D9F-4E3A-9B2C-1F6D8A4E5B3C}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}
+
+; Installation directories
+DefaultDirName={autopf}\{#MyAppName}
+DefaultGroupName={#MyAppName}
+DisableProgramGroupPage=yes
+
+; Output
+OutputDir=installer_output
+OutputBaseFilename=ezSLauncher_Setup_{#MyAppVersion}
+
+; Compression
+Compression=lzma2
+SolidCompression=yes
+
+; Windows version requirement
+MinVersion=10.0.19041
+
+; Privileges
+PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=dialog
+
+; UI settings
+WizardStyle=modern
+SetupIconFile=icon\icon.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Tasks]
+Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
+Name: "quicklaunchicon"; Description: "Create a Quick Launch shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked; OnlyBelowVersion: 6.1
+
+[Files]
+; Main executable
+Source: "dist\ezSLauncher\ezSLauncher.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+; Language file
+Source: "dist\ezSLauncher\lang_ko.ini"; DestDir: "{app}"; Flags: ignoreversion
+
+; Icon folder
+Source: "dist\ezSLauncher\icon\*"; DestDir: "{app}\icon"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; Internal dependencies
+Source: "dist\ezSLauncher\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+; Start Menu shortcuts
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
+
+; Desktop shortcut
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+
+; Quick Launch shortcut
+Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: quicklaunchicon
+
+[Run]
+; Option to run after installation
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; Clean up config files on uninstall
+Type: files; Name: "{app}\app_config.json"
+Type: dirifempty; Name: "{app}"
+"@
+          
+          # Save ISS file
+          $issContent | Out-File -FilePath "ezSLauncher_setup.iss" -Encoding UTF8
+          
+          Write-Host "✓ ISS file created"
+          Write-Host "Version: $versionClean"
+          Write-Host "`n=== ISS File Content (first 20 lines) ==="
+          Get-Content "ezSLauncher_setup.iss" -TotalCount 20
+
       # Create Windows Installer with Setup Wizard
       - name: Create Setup Wizard Installer
         shell: pwsh
         run: |
           Write-Host "=== Creating Setup Wizard Installer ==="
           
-          # Check if ISS file exists
+          # Verify ISS file exists
           if (-not (Test-Path "ezSLauncher_setup.iss")) {
-            Write-Host "✗ ezSLauncher_setup.iss not found in current directory"
-            Write-Host "Current directory: $PWD"
-            Write-Host "Files in directory:"
-            Get-ChildItem | Format-Table Name
+            Write-Host "✗ ezSLauncher_setup.iss not found"
             exit 1
           }
           
-          Write-Host "✓ ezSLauncher_setup.iss found"
-          
-          $version = "${{ steps.vars.outputs.version }}"
-          $versionClean = $version -replace '-.*',''
-          
-          # Update version in ISS script
-          $issContent = Get-Content "ezSLauncher_setup.iss" -Raw -Encoding UTF8
-          $issContent = $issContent -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$versionClean`""
-          $issContent | Set-Content "ezSLauncher_setup.iss" -Encoding UTF8
-          
-          Write-Host "Version set to: $versionClean"
+          Write-Host "✓ ISS file found"
           
           # Verify build output exists
           if (-not (Test-Path "dist/ezSLauncher/ezSLauncher.exe")) {
             Write-Host "✗ dist/ezSLauncher/ezSLauncher.exe not found"
-            Write-Host "Cannot create installer without built files"
+            Write-Host "Build output directory contents:"
+            Get-ChildItem "dist" -Recurse | Format-Table FullName
             exit 1
           }
           
           Write-Host "✓ Build output verified"
+          
+          # List files that will be included
+          Write-Host "`n=== Files to be included in installer ==="
+          Write-Host "Main executable:"
+          Get-Item "dist/ezSLauncher/ezSLauncher.exe" | Format-Table Name, Length
+          
+          Write-Host "`nLanguage file:"
+          if (Test-Path "dist/ezSLauncher/lang_ko.ini") {
+            Get-Item "dist/ezSLauncher/lang_ko.ini" | Format-Table Name, Length
+          } else {
+            Write-Host "⚠ lang_ko.ini not found"
+          }
+          
+          Write-Host "`nIcon folder:"
+          if (Test-Path "dist/ezSLauncher/icon") {
+            Get-ChildItem "dist/ezSLauncher/icon" | Format-Table Name, Length
+          } else {
+            Write-Host "⚠ icon folder not found"
+          }
           
           # Compile with Inno Setup
           $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
@@ -312,59 +424,53 @@ jobs:
             exit 1
           }
           
-          Write-Host "Compiling installer with Inno Setup..."
-          Write-Host "ISS file: ezSLauncher_setup.iss"
+          Write-Host "`nCompiling installer with Inno Setup..."
           Write-Host "Compiler: $isccPath"
+          Write-Host "Script: ezSLauncher_setup.iss"
+          Write-Host "Working directory: $PWD"
           
-          # Run ISCC with full path and capture output
-          $process = Start-Process -FilePath $isccPath `
-            -ArgumentList "ezSLauncher_setup.iss" `
-            -NoNewWindow `
-            -Wait `
-            -PassThru `
-            -RedirectStandardOutput "iscc_output.txt" `
-            -RedirectStandardError "iscc_error.txt"
+          # Run ISCC
+          & $isccPath "ezSLauncher_setup.iss"
           
-          # Display output
-          if (Test-Path "iscc_output.txt") {
-            Write-Host "`n=== ISCC Output ==="
-            Get-Content "iscc_output.txt"
-          }
+          $exitCode = $LASTEXITCODE
+          Write-Host "ISCC exit code: $exitCode"
           
-          if (Test-Path "iscc_error.txt") {
-            Write-Host "`n=== ISCC Errors ==="
-            Get-Content "iscc_error.txt"
-          }
-          
-          if ($process.ExitCode -ne 0) {
-            Write-Host "✗ Inno Setup compilation failed with exit code: $($process.ExitCode)"
+          if ($exitCode -ne 0) {
+            Write-Host "✗ Inno Setup compilation failed with exit code: $exitCode"
+            Write-Host "`n=== Checking for error logs ==="
+            Get-ChildItem -Filter "*.log" | ForEach-Object {
+              Write-Host "`nLog file: $($_.Name)"
+              Get-Content $_.FullName
+            }
             exit 1
           }
           
-          Write-Host "✓ Setup wizard installer created"
+          Write-Host "✓ Compilation completed successfully"
           
-          # Verify output
+          # Verify output directory
           if (-not (Test-Path "installer_output")) {
             Write-Host "⚠ installer_output directory not created"
-            Write-Host "Checking for alternative output locations..."
-            Get-ChildItem -Filter "*.exe" -Recurse | Where-Object { $_.Name -like "ezSLauncher*" } | Format-Table FullName, Length
+            Write-Host "Searching for setup files..."
+            Get-ChildItem -Filter "*.exe" -Recurse | Where-Object { $_.Name -like "*Setup*" } | Format-Table FullName, Length
+            exit 1
           }
           
+          # Find setup file
           $setupFile = Get-ChildItem "installer_output" -Filter "ezSLauncher_Setup_*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           
           if ($setupFile) {
             $size = $setupFile.Length / 1MB
-            Write-Host "✓ Setup file: $($setupFile.Name)"
+            Write-Host "✓ Setup file created: $($setupFile.Name)"
             Write-Host "  Size: $([math]::Round($size, 2)) MB"
+            Write-Host "  Path: $($setupFile.FullName)"
             
-            # Copy to simpler name
-            $newName = "ezSLauncher_Setup.exe"
-            Copy-Item $setupFile.FullName -Destination $newName
-            Write-Host "✓ Copied to: $newName"
+            # Copy to root with simpler name
+            Copy-Item $setupFile.FullName -Destination "ezSLauncher_Setup.exe"
+            Write-Host "✓ Copied to: ezSLauncher_Setup.exe"
           } else {
             Write-Host "✗ Setup file not found in installer_output"
-            Write-Host "Searching entire directory..."
-            Get-ChildItem -Filter "*.exe" -Recurse | Where-Object { $_.Name -like "*Setup*" } | Format-Table FullName, Length
+            Write-Host "`nContents of installer_output:"
+            Get-ChildItem "installer_output" | Format-Table Name, Length
             exit 1
           }
 
