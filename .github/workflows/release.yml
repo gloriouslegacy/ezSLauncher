@@ -1,4 +1,4 @@
-name: Build and Release (Icon Fix with rcedit)
+name: Build and Release (PKG Error Fixed)
 
 on:
   push:
@@ -48,27 +48,18 @@ jobs:
           pip install -r requirements.txt
         shell: pwsh
 
-      # rcedit 다운로드 (아이콘 주입용 - 가볍고 신뢰성 높음)
-      - name: Download rcedit
-        shell: pwsh
-        run: |
-          Write-Host "Downloading rcedit..."
-          Invoke-WebRequest -Uri "https://github.com/electron/rcedit/releases/download/v1.1.1/rcedit-x64.exe" -OutFile "rcedit.exe"
-          Write-Host "rcedit downloaded successfully"
-
       # 아이콘 파일 존재 확인
       - name: Check icon files
         shell: pwsh
         run: |
           Write-Host "=== Checking icon files ==="
+          
           if (Test-Path "icon/icon.ico") {
             Write-Host "[OK] icon/icon.ico exists"
             $iconFile = Get-Item "icon/icon.ico"
-            Write-Host "Size: $($iconFile.Length) bytes"
+            Write-Host "  Size: $($iconFile.Length) bytes"
           } else {
             Write-Host "[ERROR] icon/icon.ico NOT FOUND!"
-            Write-Host "Directory contents:"
-            Get-ChildItem -Recurse | Select-Object FullName
             exit 1
           }
           
@@ -132,84 +123,145 @@ jobs:
           
           $versionInfo | Out-File -FilePath "version_info.txt" -Encoding UTF8
 
-      # PyInstaller로 빌드 (아이콘 없이 먼저 빌드)
+      # .spec 파일 생성 (UPX 비활성화 및 아이콘 경로 명시)
+      - name: Generate spec file
+        shell: pwsh
+        run: |
+          $currentDir = (Get-Location).Path
+          $iconPath = Join-Path $currentDir "icon\icon.ico"
+          $iconTitlePath = Join-Path $currentDir "icon\icon_title.ico"
+          
+          # 경로를 PyInstaller가 인식할 수 있도록 변환 (백슬래시를 이중 백슬래시로)
+          $iconPathEscaped = $iconPath -replace '\\', '\\\\'
+          $iconTitlePathEscaped = $iconTitlePath -replace '\\', '\\\\'
+          
+          Write-Host "Generating spec file..."
+          Write-Host "Icon path: $iconPath"
+          Write-Host "Icon title path: $iconTitlePath"
+          
+          $specContent = @"
+          # -*- mode: python ; coding: utf-8 -*-
+
+          block_cipher = None
+
+          a = Analysis(
+              ['ezSLauncher.py'],
+              pathex=[],
+              binaries=[],
+              datas=[('$iconTitlePathEscaped', 'icon')],
+              hiddenimports=[],
+              hookspath=[],
+              hooksconfig={},
+              runtime_hooks=[],
+              excludes=[],
+              win_no_prefer_redirects=False,
+              win_private_assemblies=False,
+              cipher=block_cipher,
+              noarchive=False,
+          )
+
+          pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+          exe = EXE(
+              pyz,
+              a.scripts,
+              a.binaries,
+              a.zipfiles,
+              a.datas,
+              [],
+              name='ezSLauncher',
+              debug=False,
+              bootloader_ignore_signals=False,
+              strip=False,
+              upx=False,
+              upx_exclude=[],
+              runtime_tmpdir=None,
+              console=False,
+              disable_windowed_traceback=False,
+              argv_emulation=False,
+              target_arch=None,
+              codesign_identity=None,
+              entitlements_file=None,
+              version='version_info.txt',
+              uac_admin=True,
+              icon='$iconPathEscaped',
+          )
+          "@
+          
+          $specContent | Out-File -FilePath "ezSLauncher.spec" -Encoding UTF8
+          
+          Write-Host "`n=== Generated spec file content ==="
+          Get-Content "ezSLauncher.spec" | Write-Host
+
+      # PyInstaller로 빌드 (spec 파일 사용)
       - name: Build with PyInstaller
         shell: pwsh
         run: |
-          Write-Host "=== Building EXE (without icon first) ==="
-          pyinstaller --onefile `
-            --windowed `
-            --name "ezSLauncher" `
-            --clean `
-            --uac-admin `
-            --version-file "version_info.txt" `
-            --add-data "icon\icon_title.ico;icon" `
-            "ezSLauncher.py"
+          Write-Host "=== Building with PyInstaller ==="
+          
+          # spec 파일을 사용하여 빌드
+          pyinstaller ezSLauncher.spec --clean --log-level=INFO
           
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "PyInstaller failed!"
+            Write-Host "[ERROR] PyInstaller failed with exit code: $LASTEXITCODE"
             exit 1
           }
           
-          Write-Host "[SUCCESS] EXE built successfully"
+          Write-Host "[SUCCESS] Build completed successfully"
 
-      # rcedit로 아이콘 주입
-      - name: Inject icon with rcedit
-        shell: pwsh
-        run: |
-          Write-Host "=== Injecting icon with rcedit ==="
-          
-          $exePath = "dist\ezSLauncher.exe"
-          $iconPath = "icon\icon.ico"
-          
-          if (-not (Test-Path $exePath)) {
-            Write-Host "[ERROR] EXE not found: $exePath"
-            exit 1
-          }
-          
-          if (-not (Test-Path $iconPath)) {
-            Write-Host "[ERROR] Icon not found: $iconPath"
-            exit 1
-          }
-          
-          # rcedit로 아이콘 설정
-          Write-Host "Executing: .\rcedit.exe `"$exePath`" --set-icon `"$iconPath`""
-          .\rcedit.exe "$exePath" --set-icon "$iconPath"
-          
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "[SUCCESS] Icon injected successfully with rcedit!"
-          } else {
-            Write-Host "[ERROR] rcedit failed with exit code: $LASTEXITCODE"
-            Write-Host "Trying alternative method..."
-            
-            # 대체 방법: PyInstaller에 아이콘 포함하여 재빌드
-            Write-Host "Rebuilding with PyInstaller icon option..."
-            pyinstaller --onefile `
-              --windowed `
-              --name "ezSLauncher" `
-              --clean `
-              --uac-admin `
-              --version-file "version_info.txt" `
-              --icon "icon\icon.ico" `
-              --add-data "icon\icon_title.ico;icon" `
-              "ezSLauncher.py"
-          }
-
-      # 빌드된 EXE 확인
+      # 빌드된 EXE 검증
       - name: Verify EXE
         shell: pwsh
         run: |
+          Write-Host "=== Verifying build output ==="
+          
           if (Test-Path "dist/ezSLauncher.exe") {
             $exeFile = Get-Item "dist/ezSLauncher.exe"
-            Write-Host "=== EXE Build Complete ==="
-            Write-Host "File size: $($exeFile.Length) bytes"
-            Write-Host "Created: $($exeFile.CreationTime)"
+            Write-Host "[SUCCESS] EXE file created"
+            Write-Host "  Name: $($exeFile.Name)"
+            Write-Host "  Size: $($exeFile.Length) bytes ($([math]::Round($exeFile.Length/1MB, 2)) MB)"
+            Write-Host "  Created: $($exeFile.CreationTime)"
+            Write-Host "  Modified: $($exeFile.LastWriteTime)"
+            
+            # 파일이 너무 작으면 경고
+            if ($exeFile.Length -lt 1MB) {
+              Write-Host "[WARNING] EXE file is suspiciously small!"
+            }
           } else {
-            Write-Host "[ERROR] EXE file not found!"
+            Write-Host "[ERROR] EXE file not found in dist directory!"
+            Write-Host "`nContents of dist directory:"
+            if (Test-Path "dist") {
+              Get-ChildItem dist -Recurse | Format-Table Name, Length, FullName
+            } else {
+              Write-Host "dist directory does not exist"
+            }
             exit 1
           }
 
-      # VirusTotal 스캔 결과 URL 생성
+      # 간단한 실행 테스트 (빠른 종료 옵션 있다면)
+      - name: Test EXE execution
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Write-Host "=== Testing EXE (basic check) ==="
+          
+          # EXE가 로드되는지만 확인 (GUI 프로그램이므로 바로 종료하지 않을 수 있음)
+          $process = Start-Process -FilePath "dist\ezSLauncher.exe" -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 2
+          
+          if (-not $process.HasExited) {
+            Write-Host "[OK] EXE loaded successfully (process is running)"
+            Stop-Process -Id $process.Id -Force
+          } else {
+            $exitCode = $process.ExitCode
+            if ($exitCode -eq 0) {
+              Write-Host "[OK] EXE executed and exited normally"
+            } else {
+              Write-Host "[WARNING] EXE exited with code: $exitCode"
+            }
+          }
+
+      # VirusTotal 해시 생성
       - name: Generate file hash
         shell: pwsh
         run: |
@@ -217,24 +269,45 @@ jobs:
           Write-Host "SHA256: $($hash.Hash)"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Info`n- SHA256: ``$($hash.Hash)```n- [VirusTotal Scan](https://www.virustotal.com/gui/file/$($hash.Hash))"
 
-      # 빌드 결과 확인
+      # 빌드 산출물 목록
       - name: List build output
         shell: pwsh
         run: |
-          Write-Host "=== Build Output ==="
-          Get-ChildItem dist -Recurse | Format-Table Name, Length, FullName
+          Write-Host "=== Build artifacts ==="
+          if (Test-Path "dist") {
+            Get-ChildItem dist -Recurse | Format-Table Name, Length, FullName -AutoSize
+          }
+          if (Test-Path "build") {
+            Write-Host "`n=== Build directory (temporary) ==="
+            Get-ChildItem build -Recurse | Select-Object -First 20 | Format-Table Name, Length
+          }
 
       # 릴리스 패키지 준비
       - name: Prepare release package
         shell: pwsh
         run: |
-          mkdir release
+          Write-Host "=== Preparing release package ==="
+          
+          mkdir release -Force
           Copy-Item dist/ezSLauncher.exe release/
           
-          if (Test-Path "README.md") { Copy-Item README.md release/ }
-          if (Test-Path "LICENSE") { Copy-Item LICENSE release/ }
+          # 추가 파일 포함
+          if (Test-Path "README.md") {
+            Write-Host "Including README.md"
+            Copy-Item README.md release/
+          }
+          if (Test-Path "LICENSE") {
+            Write-Host "Including LICENSE"
+            Copy-Item LICENSE release/
+          }
           
+          # ZIP 생성
           Compress-Archive -Path release/* -DestinationPath ezSLauncher.zip -Force
+          
+          $zipFile = Get-Item ezSLauncher.zip
+          Write-Host "[SUCCESS] Release package created"
+          Write-Host "  File: $($zipFile.Name)"
+          Write-Host "  Size: $($zipFile.Length) bytes ($([math]::Round($zipFile.Length/1MB, 2)) MB)"
 
       # GitHub Release 생성
       - name: Create GitHub Release
@@ -243,24 +316,37 @@ jobs:
           tag_name: v${{ steps.vars.outputs.base_version }}
           name: Release ${{ steps.vars.outputs.release_name }}
           body: |
-            📦 Release Information
+            📦 **ezSLauncher Release**
 
-            Main Program: **ezSLauncher.exe.zip**  
-            → Contains executable file (ezSLauncher.exe) with icon
+            ## 📥 Download
+            - **ezSLauncher.zip** - Main program (extract and run)
 
-            ## Installation
-            1. Download ezSLauncher.zip
+            ## 🚀 Installation
+            1. Download `ezSLauncher.zip`
             2. Extract the archive
-            3. Run ezSLauncher.exe
+            3. Run `ezSLauncher.exe`
 
-            ## Notes
-            - Windows Defender may show a warning
-            - Administrator privileges required
-            - Icon applied using rcedit
-            - This is open-source software
+            ## ⚠️ Important Notes
+            - **Windows Defender Warning**: May show SmartScreen warning (normal for unsigned executables)
+              - Click "More info" → "Run anyway"
+            - **Administrator Privileges**: Required for some features
+            - **First Run**: May take a few seconds to initialize
 
-            ## SHA256 Hash
-            Check file integrity after download
+            ## 🔧 Technical Details
+            - Built with PyInstaller (no UPX compression)
+            - Icon embedded in executable
+            - Windows 10/11 compatible
+
+            ## 🔒 Security
+            - Open source - code available in repository
+            - Check SHA256 hash after download
+            - Scan with VirusTotal if desired
+
+            ## 📝 SHA256 Hash
+            Verify file integrity after download
+
+            ## 🐛 Issues?
+            Report any problems in the GitHub Issues section
           files: |
             ezSLauncher.zip
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
