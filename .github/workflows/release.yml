@@ -1,0 +1,176 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      # 태그에서 버전 추출
+      - name: Determine version
+        id: vars
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            base_version="${GITHUB_REF#refs/tags/v}"
+            version="$base_version"
+            release_name="$base_version"
+          else
+            version="0.0.0-dev-$(date +%Y%m%d)"
+            base_version="0.0.0-dev"
+            release_name="$version"
+          fi
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "base_version=$base_version" >> $GITHUB_OUTPUT
+          echo "release_name=$release_name" >> $GITHUB_OUTPUT
+
+      # Python 의존성 설치
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+        shell: pwsh
+
+      # version_info.txt 생성 (버전 자동 업데이트)
+      - name: Generate version_info.txt
+        shell: pwsh
+        run: |
+          $version = "${{ steps.vars.outputs.version }}"
+          $versionParts = $version -replace '-.*','' -split '\.'
+          
+          # 버전을 3자리로 맞추기 (예: 1.0 -> 1.0.0)
+          while ($versionParts.Count -lt 3) {
+            $versionParts += "0"
+          }
+          
+          # filevers는 4자리 필요 (Windows 요구사항)
+          $filevers = "($($versionParts[0]), $($versionParts[1]), $($versionParts[2]), 0)"
+          # 표시용 버전은 3자리
+          $versionStr = "$($versionParts[0]).$($versionParts[1]).$($versionParts[2])"
+          
+          $versionInfo = @"
+          # UTF-8로 저장
+          
+          VSVersionInfo(
+            ffi=FixedFileInfo(
+              # 파일 버전
+              filevers=$filevers,
+              # 제품 버전
+              prodvers=$filevers,
+              mask=0x3f,
+              flags=0x0,
+              OS=0x40004,
+              fileType=0x1,
+              subtype=0x0,
+              date=(0, 0)
+              ),
+            kids=[
+              StringFileInfo(
+                [
+                StringTable(
+                  u'041204B0',
+                  [
+                  StringStruct(u'Comments', u''),
+                  StringStruct(u'CompanyName', u'ez'),
+                  StringStruct(u'FileDescription', u'ezSLauncher'),
+                  StringStruct(u'FileVersion', u'$versionStr'),
+                  StringStruct(u'InternalName', u'ezSLauncher.exe'),
+                  StringStruct(u'LegalCopyright', u'Copyright © 2025 ez All rights reserved.'),
+                  StringStruct(u'LegalTrademarks', u''),
+                  StringStruct(u'OriginalFilename', u'ezSLauncher.exe'),
+                  StringStruct(u'ProductName', u'ezSLauncher'),
+                  StringStruct(u'ProductVersion', u'$versionStr'),
+                  StringStruct(u'SpecialBuild', u'')
+                  ]
+                )
+                ]
+              ),
+              VarFileInfo([VarStruct(u'Translation', [0x0412, 1200])])
+            ]
+          )
+          "@
+          
+          $versionInfo | Out-File -FilePath "version_info.txt" -Encoding UTF8
+
+      # PyInstaller로 빌드
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --icon "./icon/icon.ico" --add-data "./icon/icon_title.ico;./icon" --hide-console "hide-early" --uac-admin --version-file "version_info.txt" --name "ezSLauncher" --clean "ezSLauncher.py"
+        shell: pwsh
+
+      # VirusTotal 스캔 결과 URL 생성 (선택적)
+      - name: Generate file hash
+        shell: pwsh
+        run: |
+          $hash = Get-FileHash -Path "dist/ezSLauncher.exe" -Algorithm SHA256
+          Write-Host "SHA256: $($hash.Hash)"
+          Write-Host "VirusTotal URL: https://www.virustotal.com/gui/file/$($hash.Hash)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Info`n- SHA256: ``$($hash.Hash)```n- [VirusTotal Scan](https://www.virustotal.com/gui/file/$($hash.Hash))"
+
+      # 빌드 결과 확인 (디버깅용)
+      - name: List build output
+        shell: pwsh
+        run: |
+          Write-Host "=== Build Output ==="
+          Get-ChildItem dist -Recurse | Format-Table Name, Length, FullName
+
+      # 릴리스 패키지 준비
+      - name: Prepare release package
+        shell: pwsh
+        run: |
+          mkdir release
+          Copy-Item dist/ezSLauncher.exe release/
+          
+          # 필요한 경우 추가 파일 복사 (예: README, LICENSE 등)
+          if (Test-Path "README.md") { Copy-Item README.md release/ }
+          if (Test-Path "LICENSE") { Copy-Item LICENSE release/ }
+          
+          # ZIP 파일 생성
+          Compress-Archive -Path release/* -DestinationPath ezSLauncher.zip -Force
+
+      # GitHub Release 생성
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.vars.outputs.base_version }}
+          name: Release ${{ steps.vars.outputs.release_name }}
+          body: |
+            📦 Release Information
+
+            Main Program: **ezSLauncher.exezip**  
+            → Contains executable file (ezSLauncher.exe)
+
+            ## Installation
+            1. Download ezSLauncher.zip
+            2. Extract the archive
+            3. Run ezSLauncher.exe
+
+            ## Notes
+            - Windows Defender may show a warning
+            - Administrator privileges required
+            - This is open-source software - source code available in repository
+
+            ## SHA256 Hash
+            Check file integrity after download
+          files: |
+            ezSLauncher.zip
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
