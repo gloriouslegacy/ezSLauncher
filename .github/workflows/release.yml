@@ -112,27 +112,16 @@ jobs:
       # PyInstaller로 빌드
       - name: Build with PyInstaller
         run: |
-          pyinstaller --noconfirm --onefile --windowed --icon "./icon/icon.ico" --add-data "./icon/icon_title.ico;./icon" --hide-console "hide-early" --uac-admin --version-file "version_info.txt" --name "ezSLauncher" --clean "ezSLauncher.py"
+          pyinstaller --onefile `
+            --windowed `
+            --name "ezSLauncher" `
+            --clean `
+            --uac-admin `
+            --version-file "version_info.txt" `
+            --icon="./icon/icon.ico" `
+            --add-data "./icon/icon_title.ico;./icon" `
+            ezSLauncher.py
         shell: pwsh
-
-      # 자체 서명 (Windows Defender 오탐 방지)
-      # - name: Sign executable with self-signed certificate
-      #   shell: pwsh
-      #   run: |
-      #     # OpenSSL을 통한 자체 서명 인증서 생성
-      #     openssl req -new -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/C=KR/ST=Gwangju/L=Gwangju/O=ez/CN=ezSLauncher"
-          
-      #     # PEM을 PFX로 변환 (Windows 호환)
-      #     openssl pkcs12 -export -out certificate.pfx -inkey key.pem -in cert.pem -passout pass:
-          
-      #     # Windows signtool을 사용한 서명 (Windows SDK 포함)
-      #     & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f certificate.pfx /fd SHA256 /t http://timestamp.digicert.com dist\ezSLauncher.exe
-          
-      #     if ($LASTEXITCODE -eq 0) {
-      #       Write-Host "✓ Executable signed successfully"
-      #     } else {
-      #       Write-Host "⚠ Signing failed, continuing without signature"
-      #     }
 
       # VirusTotal 스캔 결과 URL 생성 (선택적)
       - name: Generate file hash
