@@ -54,7 +54,7 @@ if exist "icon\icon.ico" (
 ) else if exist "icon.ico" (
     echo [확인] 아이콘 파일 발견: icon.ico
     set ICON_PATH=icon.ico
-    set ADD_DATA_OPTION=--add-data "icon.ico;."
+    set ADD_DATA_OPTION=--add-data "icon_title.ico;."
 ) else (
     echo [경고] 아이콘 파일이 없습니다. 기본 아이콘으로 빌드됩니다.
     echo 아이콘을 추가하려면 icon.ico 파일을 스크립트와 같은 폴더에 두세요.
@@ -135,12 +135,12 @@ if exist "dist\ezSLauncher.exe" (
     echo.
     echo 주의사항:
     echo - Windows Defender가 차단할 수 있습니다 (신뢰할 수 있는 파일임)
-    @REM echo - 첫 실행 시 "자세한 정보"를 클릭하고 "실행"을 선택하세요
-    @REM echo - 바이러스 검사: https://www.virustotal.com 에서 확인 가능
+    REM echo - 첫 실행 시 "자세한 정보"를 클릭하고 "실행"을 선택하세요
+    REM echo - 바이러스 검사: https://www.virustotal.com 에서 확인 가능
     echo.
     )
     
-    @REM explorer /select,"dist\ezSLauncher.exe"
+    REM explorer /select,"dist\ezSLauncher.exe"
 ) else (
     echo [오류] EXE 파일을 찾을 수 없습니다.
     echo dist 폴더를 확인해주세요.
