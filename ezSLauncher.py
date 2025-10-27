@@ -165,6 +165,7 @@ class FileSearchApp:
             "browse": "Browse...",
             "include_subdirs": "Include Subdirectories",
             "search": "🔍 Search",
+            "stop": "⏹ Stop",
             "execute_selected": "▶ Execute Selected",
             "clear_results": "🗑 Clear Results",
             "select_all": "☑ Select All",
@@ -237,6 +238,7 @@ class FileSearchApp:
             "browse": "찾아보기...",
             "include_subdirs": "하위 디렉토리 포함",
             "search": "🔍 검색",
+            "stop": "⏹ 정지",
             "execute_selected": "▶ 선택 항목 실행",
             "clear_results": "🗑 결과 지우기",
             "select_all": "☑ 모두 선택",
@@ -314,6 +316,7 @@ class FileSearchApp:
         self.search_results: List[FileItem] = []
         self.checked_items: Dict[str, bool] = {}
         self.is_searching = False
+        self.search_cancelled = False  # Flag to cancel ongoing search
         
         # Dark mode state
         self.dark_mode = self.config.get("dark_mode", False)
@@ -727,30 +730,35 @@ class FileSearchApp:
         
         # Search button
         self.search_btn = ttk.Button(control_frame, text=self.t("search"), command=self.start_search, width=15)
-        self.search_btn.grid(row=0, column=0, padx=(0, 10))
+        self.search_btn.grid(row=0, column=0, padx=(0, 5))
+        
+        # Stop button (initially hidden)
+        self.stop_btn = ttk.Button(control_frame, text=self.t("stop"), command=self.stop_search, width=15)
+        self.stop_btn.grid(row=0, column=1, padx=(0, 10))
+        self.stop_btn.grid_remove()  # Hide initially
         
         # Execute selected button
         execute_btn = ttk.Button(control_frame, text=self.t("execute_selected"), command=self.execute_selected, width=18)
-        execute_btn.grid(row=0, column=1, padx=(0, 10))
+        execute_btn.grid(row=0, column=2, padx=(0, 10))
         
         # Clear results button
         clear_btn = ttk.Button(control_frame, text=self.t("clear_results"), command=self.clear_results, width=15)
-        clear_btn.grid(row=0, column=2, padx=(0, 10))
+        clear_btn.grid(row=0, column=3, padx=(0, 10))
         
         # Export results button
         export_btn = ttk.Button(control_frame, text=self.t("export_results"), command=self.export_results, width=15)
-        export_btn.grid(row=0, column=6, padx=(20, 0))
+        export_btn.grid(row=0, column=7, padx=(20, 0))
         
         # Select all/none
         select_all_btn = ttk.Button(control_frame, text=self.t("select_all"), command=self.select_all, width=12)
-        select_all_btn.grid(row=0, column=3, padx=(0, 5))
+        select_all_btn.grid(row=0, column=4, padx=(0, 5))
         
         select_none_btn = ttk.Button(control_frame, text=self.t("select_none"), command=self.select_none, width=12)
-        select_none_btn.grid(row=0, column=4)
+        select_none_btn.grid(row=0, column=5)
         
         # Results count label
         self.results_label = ttk.Label(control_frame, text=self.t("results") + " 0")
-        self.results_label.grid(row=0, column=5, padx=(20, 0))
+        self.results_label.grid(row=0, column=6, padx=(20, 0))
     
     def create_results_section(self, parent):
         """Create results display section with treeview"""
@@ -884,7 +892,8 @@ class FileSearchApp:
         github_label.bind("<Button-1>", lambda e: self.open_github())
         
         self.progress = ttk.Progressbar(status_frame, mode='indeterminate', length=200)
-        self.progress.pack(side=tk.RIGHT, padx=(10, 0))
+        # Initially hide the progress bar
+        # self.progress.pack(side=tk.RIGHT, padx=(10, 0))
     
     def browse_directory(self):
         """Open directory browser dialog"""
@@ -913,9 +922,11 @@ class FileSearchApp:
             messagebox.showerror("Invalid Directory", "Please select a valid search directory.")
             return
         
-        # Disable search button
-        self.search_btn.config(state=tk.DISABLED)
+        # Disable search button and show stop button
+        self.search_btn.grid_remove()
+        self.stop_btn.grid()
         self.is_searching = True
+        self.search_cancelled = False
         
         # Show and start progress bar
         self.progress.pack(side=tk.RIGHT, padx=(10, 0))
@@ -945,7 +956,12 @@ class FileSearchApp:
             
             if recursive:
                 for root, dirs, files in os.walk(search_dir):
+                    # Check if search was cancelled
+                    if self.search_cancelled:
+                        break
                     for file in files:
+                        if self.search_cancelled:
+                            break
                         file_path = os.path.join(root, file)
                         try:
                             file_item = FileItem(file_path)
@@ -1006,10 +1022,17 @@ class FileSearchApp:
     def search_complete(self):
         """Called when search is complete"""
         self.is_searching = False
-        self.search_btn.config(state=tk.NORMAL)
+        self.stop_btn.grid_remove()
+        self.search_btn.grid()
         self.progress.stop()
         # Hide progress bar by unpacking
         self.progress.pack_forget()
+    
+    def stop_search(self):
+        """Stop the ongoing search"""
+        if self.is_searching:
+            self.search_cancelled = True
+            self.update_status("Search cancelled by user")
     
     def toggle_check(self, event=None):
         """Toggle checkbox for selected item"""
@@ -1115,9 +1138,65 @@ class FileSearchApp:
             if admin:
                 # Run as administrator on Windows
                 if sys.platform == 'win32':
-                    subprocess.Popen(['runas', '/user:Administrator', file_path], shell=True)
+                    import ctypes
+                    import subprocess
+                    
+                    # Normalize path for Windows
+                    file_path = os.path.abspath(file_path)
+                    
+                    # Debug: Show which file is being executed
+                    print(f"Attempting to run as admin: {file_path}")
+                    self.update_status(f"Running as admin: {os.path.basename(file_path)}")
+                    
+                    # Method 1: Try using subprocess with proper escaping
+                    try:
+                        # Use PowerShell's Start-Process with -Verb RunAs
+                        # Escape the path properly for PowerShell
+                        escaped_path = file_path.replace("'", "''")
+                        cmd = ['powershell', '-Command', f"Start-Process -FilePath '{escaped_path}' -Verb RunAs"]
+                        print(f"Executing command: {cmd}")
+                        subprocess.Popen(cmd)
+                        self.update_status(f"Executed as admin: {os.path.basename(file_path)}")
+                        return
+                    except Exception as e1:
+                        print(f"PowerShell method failed: {e1}")
+                        
+                        # Method 2: Fallback to ShellExecuteW
+                        try:
+                            ret = ctypes.windll.shell32.ShellExecuteW(
+                                None,           # hwnd
+                                "runas",        # lpOperation - Run as administrator
+                                file_path,      # lpFile
+                                None,           # lpParameters
+                                None,           # lpDirectory
+                                1               # nShowCmd - SW_SHOWNORMAL
+                            )
+                            
+                            print(f"ShellExecuteW returned: {ret}")
+                            
+                            if ret <= 32:
+                                error_messages = {
+                                    0: "Out of memory or resources",
+                                    2: "File not found",
+                                    3: "Path not found",
+                                    5: "Access denied",
+                                    8: "Out of memory",
+                                    26: "Sharing violation",
+                                    27: "File association incomplete or invalid",
+                                    28: "DDE timeout",
+                                    29: "DDE transaction failed",
+                                    30: "DDE busy",
+                                    31: "No file association",
+                                    32: "DLL not found"
+                                }
+                                error_msg = error_messages.get(ret, f"Unknown error code: {ret}")
+                                raise Exception(f"ShellExecuteW failed: {error_msg}")
+                        except Exception as e2:
+                            print(f"ShellExecuteW failed: {e2}")
+                            raise Exception(f"Both methods failed. PowerShell: {e1}, ShellExecuteW: {e2}")
                 else:
-                    subprocess.Popen(['sudo', file_path])
+                    # Linux/Mac - use sudo with xdg-open
+                    subprocess.Popen(['sudo', 'xdg-open', file_path])
             else:
                 # Normal execution
                 if sys.platform == 'win32':
@@ -1127,16 +1206,22 @@ class FileSearchApp:
             
             self.update_status(f"Executed: {os.path.basename(file_path)}")
         except Exception as e:
-            messagebox.showerror("Execution Error", f"Failed to execute file:\n{str(e)}")
+            import traceback
+            error_detail = traceback.format_exc()
+            print(error_detail)
+            messagebox.showerror("Execution Error", f"Failed to execute file:\n{str(e)}\n\nFile: {file_path}")
     
     def open_file_location(self, file_path: str):
         """Open file location in explorer"""
         try:
-            directory = os.path.dirname(file_path)
             if sys.platform == 'win32':
-                # Use shell=True for Windows explorer command
-                subprocess.Popen(f'explorer /select,"{file_path}"', shell=True)
+                # Windows: Use os.startfile with explorer and /select parameter
+                # This works more reliably on Windows 11
+                import subprocess
+                subprocess.run(['explorer', '/select,', os.path.normpath(file_path)])
             else:
+                # Linux/Mac: Open directory
+                directory = os.path.dirname(file_path)
                 subprocess.Popen(['xdg-open', directory])
             self.update_status(f"Opened file location")
         except Exception as e:
