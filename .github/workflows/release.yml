@@ -112,7 +112,7 @@ jobs:
       # PyInstaller로 빌드
       - name: Build with PyInstaller
         run: |
-          pyinstaller --noconfirm --onefile --windowed --icon "./icon/icon.ico" --add-data "./icon/icon_title.ico;./icon" --hide-console "hide-early" --uac-admin --version-file "version_info.txt" --name "ezSLauncher" --clean "ezSLauncher.py"
+          pyinstaller --onefile --windowed --name "ezSLauncher" --clean --uac-admin --version-file "version_info.txt" --icon "./icon/icon.ico" --add-data "./icon/icon_title.ico;./icon" "ezSLauncher.py"
         shell: pwsh
 
       # VirusTotal 스캔 결과 URL 생성 (선택적)

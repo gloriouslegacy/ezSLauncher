@@ -27,4 +27,4 @@ Write-Host "Done!"
 Write-Host ""
 # -----------------------------------------------------------------------------
 
-pyinstaller --noconfirm --onefile --windowed --icon "./icon/icon.ico" --add-data "./icon/icon_title.ico;./icon" --hide-console "hide-early" --uac-admin --version-file "version_info.txt" $ScriptName
+pyinstaller --onefile --windowed --name "ezSLauncher" --clean --uac-admin --version-file "version_info.txt" --icon ".\icon\icon.ico" --add-data ".\icon\icon_title.ico;.\icon" $ScriptName
