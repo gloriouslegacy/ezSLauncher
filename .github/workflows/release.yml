@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      # 태그에서 버전 추출
+      # Determine version from tags
       - name: Determine version
         id: vars
         shell: bash
@@ -40,7 +40,7 @@ jobs:
           echo "base_version=$base_version" >> $GITHUB_OUTPUT
           echo "release_name=$release_name" >> $GITHUB_OUTPUT
 
-      # 아이콘 파일 존재 확인 (디버깅)
+      # Verify icon files exist
       - name: Verify icon files
         shell: pwsh
         run: |
@@ -57,7 +57,7 @@ jobs:
           if (Test-Path "./icon/icon_title.ico") {
             Write-Host "✓ icon_title.ico found"
           } else {
-            Write-Host "✗ icon_title.ico NOT found"
+            Write-Host "⚠ icon_title.ico NOT found (optional)"
           }
           
           Write-Host "`n=== Directory Structure ==="
@@ -65,7 +65,7 @@ jobs:
             Write-Host "  $($_.FullName)"
           }
 
-      # Python 의존성 설치
+      # Install Python dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -75,31 +75,31 @@ jobs:
           }
         shell: pwsh
 
-      # version_info.txt 생성 (버전 자동 업데이트)
+      # Generate version_info.txt with auto-updated version
       - name: Generate version_info.txt
         shell: pwsh
         run: |
           $version = "${{ steps.vars.outputs.version }}"
           $versionParts = $version -replace '-.*','' -split '\.'
           
-          # 버전을 3자리로 맞추기 (예: 1.0 -> 1.0.0)
+          # Pad version to 3 parts (e.g., 1.0 -> 1.0.0)
           while ($versionParts.Count -lt 3) {
             $versionParts += "0"
           }
           
-          # filevers는 4자리 필요 (Windows 요구사항)
+          # filevers needs 4 parts (Windows requirement)
           $filevers = "($($versionParts[0]), $($versionParts[1]), $($versionParts[2]), 0)"
-          # 표시용 버전은 3자리
+          # Display version uses 3 parts
           $versionStr = "$($versionParts[0]).$($versionParts[1]).$($versionParts[2])"
           
           $versionInfo = @"
-          # UTF-8로 저장
+          # UTF-8 encoding
           
           VSVersionInfo(
             ffi=FixedFileInfo(
-              # 파일 버전
+              # File version
               filevers=$filevers,
-              # 제품 버전
+              # Product version
               prodvers=$filevers,
               mask=0x3f,
               flags=0x0,
@@ -114,9 +114,9 @@ jobs:
                 StringTable(
                   u'041204B0',
                   [
-                  StringStruct(u'Comments', u''),
+                  StringStruct(u'Comments', u'Advanced file search and launcher'),
                   StringStruct(u'CompanyName', u'ez'),
-                  StringStruct(u'FileDescription', u'ezSLauncher'),
+                  StringStruct(u'FileDescription', u'ezSLauncher - File Search & Launcher'),
                   StringStruct(u'FileVersion', u'$versionStr'),
                   StringStruct(u'InternalName', u'ezSLauncher.exe'),
                   StringStruct(u'LegalCopyright', u'Copyright © 2025 ez All rights reserved.'),
@@ -139,120 +139,200 @@ jobs:
           Write-Host "=== Generated version_info.txt ==="
           Get-Content "version_info.txt"
 
-      # PyInstaller로 빌드 (BAT 파일과 동일한 순서)
-      - name: Build with PyInstaller
+      # Build PORTABLE version (single EXE with everything embedded)
+      - name: Build Portable Version
         shell: pwsh
         run: |
-          Write-Host "=== Starting PyInstaller Build ==="
+          Write-Host "=== Building PORTABLE Version ==="
           
-          # 상대 경로로 아이콘 지정 (Unix 스타일 경로 구분자 사용)
           $iconPath = "icon/icon.ico"
           Write-Host "Icon path: $iconPath"
           Write-Host "Icon exists: $(Test-Path 'icon\icon.ico')"
           
-          # PyInstaller 실행 - 상대 경로와 슬래시(/) 사용
+          # PyInstaller for portable - everything in one EXE
           pyinstaller --onefile `
             --windowed `
-            --name "ezSLauncher" `
+            --name "ezSLauncher_Portable" `
             --clean `
-            --uac-admin `
             --version-file "version_info.txt" `
-            --icon="icon/icon.ico" `
-            --add-data "icon/icon_title.ico;icon" `
+            --icon="$iconPath" `
+            --add-data "icon;icon" `
+            --add-data "lang_ko.ini;." `
             ezSLauncher.py
           
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "❌ PyInstaller build failed with exit code $LASTEXITCODE"
+            Write-Host "✗ Portable build failed with exit code $LASTEXITCODE"
             exit 1
           }
           
-          Write-Host "✓ PyInstaller build completed"
+          Write-Host "✓ Portable build completed"
+          
+          # Verify portable build
+          if (Test-Path "dist/ezSLauncher_Portable.exe") {
+            $size = (Get-Item "dist/ezSLauncher_Portable.exe").Length
+            Write-Host "✓ Portable EXE created: $($size / 1MB) MB"
+          }
 
-      # 빌드된 EXE의 아이콘 확인
-      - name: Verify built executable icon
+      # Build INSTALLER version (folder with separate files)
+      - name: Build Installer Version
         shell: pwsh
         run: |
-          Write-Host "=== Verifying Built Executable ==="
+          Write-Host "=== Building INSTALLER Version ==="
           
-          if (Test-Path "dist/ezSLauncher.exe") {
-            $exeSize = (Get-Item "dist/ezSLauncher.exe").Length
-            Write-Host "✓ EXE file created"
-            Write-Host "  Size: $exeSize bytes"
+          $iconPath = "icon/icon.ico"
+          
+          # Clean previous build
+          if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
+          
+          # PyInstaller for installer - separate files in folder
+          pyinstaller --onedir `
+            --windowed `
+            --name "ezSLauncher" `
+            --clean `
+            --version-file "version_info.txt" `
+            --icon="$iconPath" `
+            --add-data "icon;icon" `
+            --add-data "lang_ko.ini;." `
+            ezSLauncher.py
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "✗ Installer build failed with exit code $LASTEXITCODE"
+            exit 1
+          }
+          
+          Write-Host "✓ Installer build completed"
+          
+          # Verify installer build
+          if (Test-Path "dist/ezSLauncher/ezSLauncher.exe") {
+            $size = (Get-Item "dist/ezSLauncher/ezSLauncher.exe").Length
+            Write-Host "✓ Installer EXE created: $($size / 1MB) MB"
             
-            # PE 리소스 섹션에서 아이콘 확인
+            Write-Host "`n=== Installer Contents ==="
+            Get-ChildItem "dist/ezSLauncher" -Recurse | Format-Table Name, Length
+          }
+
+      # Verify built executables
+      - name: Verify Built Executables
+        shell: pwsh
+        run: |
+          Write-Host "=== Verifying Built Executables ==="
+          
+          # Check Portable
+          if (Test-Path "dist/ezSLauncher_Portable.exe") {
+            $exeSize = (Get-Item "dist/ezSLauncher_Portable.exe").Length
+            Write-Host "✓ Portable EXE: $($exeSize / 1MB) MB"
+            
             try {
               Add-Type -AssemblyName System.Drawing
-              $icon = [System.Drawing.Icon]::ExtractAssociatedIcon("$PWD\dist\ezSLauncher.exe")
+              $icon = [System.Drawing.Icon]::ExtractAssociatedIcon("$PWD\dist\ezSLauncher_Portable.exe")
               if ($icon) {
-                Write-Host "✓ Icon successfully extracted from EXE"
-                Write-Host "  Icon size: $($icon.Width)x$($icon.Height)"
+                Write-Host "✓ Portable icon verified: $($icon.Width)x$($icon.Height)"
                 $icon.Dispose()
-              } else {
-                Write-Host "⚠ No icon found in EXE"
               }
             } catch {
-              Write-Host "⚠ Could not extract icon: $($_.Exception.Message)"
-            }
-            
-            # 바이트 레벨 검사 - ICO 시그니처 확인
-            $bytes = [System.IO.File]::ReadAllBytes("dist/ezSLauncher.exe")
-            $hasIcon = $false
-            
-            for ($i = 0; $i -lt $bytes.Length - 4; $i++) {
-              if ($bytes[$i] -eq 0x00 -and $bytes[$i+1] -eq 0x00 -and 
-                  $bytes[$i+2] -eq 0x01 -and $bytes[$i+3] -eq 0x00) {
-                $hasIcon = $true
-                Write-Host "✓ ICO signature found at offset: $i"
-                break
-              }
-            }
-            
-            if (-not $hasIcon) {
-              Write-Host "⚠ WARNING: ICO signature not found in executable"
-              Write-Host "  This may indicate the icon was not properly embedded"
+              Write-Host "⚠ Could not verify portable icon: $($_.Exception.Message)"
             }
           } else {
-            Write-Host "❌ EXE file not found"
+            Write-Host "✗ Portable EXE not found"
+            exit 1
+          }
+          
+          # Check Installer
+          if (Test-Path "dist/ezSLauncher/ezSLauncher.exe") {
+            $exeSize = (Get-Item "dist/ezSLauncher/ezSLauncher.exe").Length
+            Write-Host "✓ Installer EXE: $($exeSize / 1MB) MB"
+            
+            try {
+              Add-Type -AssemblyName System.Drawing
+              $icon = [System.Drawing.Icon]::ExtractAssociatedIcon("$PWD\dist\ezSLauncher\ezSLauncher.exe")
+              if ($icon) {
+                Write-Host "✓ Installer icon verified: $($icon.Width)x$($icon.Height)"
+                $icon.Dispose()
+              }
+            } catch {
+              Write-Host "⚠ Could not verify installer icon: $($_.Exception.Message)"
+            }
+          } else {
+            Write-Host "✗ Installer EXE not found"
             exit 1
           }
 
-      # 파일 해시 생성
-      - name: Generate file hash
+      # Generate file hashes
+      - name: Generate File Hashes
         shell: pwsh
         run: |
-          $hash = Get-FileHash -Path "dist/ezSLauncher.exe" -Algorithm SHA256
-          Write-Host "SHA256: $($hash.Hash)"
-          Write-Host "VirusTotal URL: https://www.virustotal.com/gui/file/$($hash.Hash)"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Info`n- SHA256: ``$($hash.Hash)```n- [VirusTotal Scan](https://www.virustotal.com/gui/file/$($hash.Hash))"
+          Write-Host "=== File Hashes ==="
+          
+          $portableHash = Get-FileHash -Path "dist/ezSLauncher_Portable.exe" -Algorithm SHA256
+          Write-Host "Portable SHA256: $($portableHash.Hash)"
+          
+          $installerHash = Get-FileHash -Path "dist/ezSLauncher/ezSLauncher.exe" -Algorithm SHA256
+          Write-Host "Installer SHA256: $($installerHash.Hash)"
+          
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value @"
+          ## Build Info
+          
+          ### Portable Version
+          - SHA256: ``$($portableHash.Hash)``
+          - [VirusTotal Scan](https://www.virustotal.com/gui/file/$($portableHash.Hash))
+          
+          ### Installer Version
+          - SHA256: ``$($installerHash.Hash)``
+          - [VirusTotal Scan](https://www.virustotal.com/gui/file/$($installerHash.Hash))
+          "@
 
-      # 빌드 결과 확인 (디버깅용)
-      - name: List build output
+      # Prepare release packages
+      - name: Prepare Release Packages
         shell: pwsh
         run: |
-          Write-Host "=== Build Output ==="
-          Get-ChildItem dist -Recurse | Format-Table Name, Length, FullName
+          Write-Host "=== Preparing Release Packages ==="
           
-          Write-Host "`n=== Spec File Check ==="
-          if (Test-Path "ezSLauncher.spec") {
-            Write-Host "Generated spec file:"
-            Get-Content "ezSLauncher.spec"
-          }
+          # Create release directory
+          New-Item -ItemType Directory -Force -Path "release"
+          
+          # Package Portable version
+          Write-Host "Packaging Portable..."
+          Copy-Item "dist/ezSLauncher_Portable.exe" "release/"
+          if (Test-Path "README.md") { Copy-Item "README.md" "release/README_Portable.txt" }
+          if (Test-Path "LICENSE") { Copy-Item "LICENSE" "release/" }
+          
+          Compress-Archive -Path "release/ezSLauncher_Portable.exe", "release/README_Portable.txt" `
+            -DestinationPath "ezSLauncher_Portable.zip" -Force
+          
+          Write-Host "✓ Portable package created"
+          
+          # Package Installer version
+          Write-Host "Packaging Installer..."
+          Remove-Item "release/*" -Force -ErrorAction SilentlyContinue
+          
+          Copy-Item -Path "dist/ezSLauncher/*" -Destination "release/" -Recurse
+          if (Test-Path "README.md") { Copy-Item "README.md" "release/README.txt" }
+          if (Test-Path "LICENSE") { Copy-Item "LICENSE" "release/" }
+          
+          # Create README for installer
+          @"
+          ezSLauncher - Installer Version
+          
+          This is the installer version with all dependencies in separate files.
+          
+          To run:
+          1. Extract all files to a folder
+          2. Run ezSLauncher.exe
+          
+          For a single-file version, download ezSLauncher_Portable.zip instead.
+          "@ | Out-File -FilePath "release/README_INSTALLER.txt" -Encoding UTF8
+          
+          Compress-Archive -Path "release/*" -DestinationPath "ezSLauncher_Installer.zip" -Force
+          
+          Write-Host "✓ Installer package created"
+          
+          Write-Host "`n=== Package Sizes ==="
+          $portableSize = (Get-Item "ezSLauncher_Portable.zip").Length / 1MB
+          $installerSize = (Get-Item "ezSLauncher_Installer.zip").Length / 1MB
+          Write-Host "Portable: $([math]::Round($portableSize, 2)) MB"
+          Write-Host "Installer: $([math]::Round($installerSize, 2)) MB"
 
-      # 릴리스 패키지 준비
-      - name: Prepare release package
-        shell: pwsh
-        run: |
-          mkdir release
-          Copy-Item dist/ezSLauncher.exe release/
-          
-          # 필요한 경우 추가 파일 복사 (예: README, LICENSE 등)
-          if (Test-Path "README.md") { Copy-Item README.md release/ }
-          if (Test-Path "LICENSE") { Copy-Item LICENSE release/ }
-          
-          # ZIP 파일 생성
-          Compress-Archive -Path release/* -DestinationPath ezSLauncher.zip -Force
-
-      # GitHub Release 생성
+      # Create GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -260,18 +340,39 @@ jobs:
           name: Release ${{ steps.vars.outputs.release_name }}
           body: |
             # 📦 ezSLauncher v${{ steps.vars.outputs.release_name }}
-
-            ## 📥 Download & Install
             
-            1. **Download** `ezSLauncher.zip`
-            2. **Extract** all files
-            3. **Run** `ezSLauncher.exe`
+            Advanced file search and launcher with regex support and dark mode.
 
-            ## ✨ What's Fixed
+            ## 📥 Download Options
+
+            ### 🚀 Portable Version (Recommended)
+            - **File**: `ezSLauncher_Portable.zip`
+            - **Size**: ~15-20 MB
+            - **Description**: Single executable file, no installation needed
+            - **Usage**: 
+              1. Download and extract
+              2. Run `ezSLauncher_Portable.exe`
+            - **Pros**: No installation, easy to move, use from USB drive
             
-            - ✅ **PKG Archive Error**: Fixed by disabling UPX compression
-            - ✅ **Icon Display**: Icon properly embedded in executable
-            - ✅ **Stability**: Improved build process with verification steps
+            ### 📂 Installer Version
+            - **File**: `ezSLauncher_Installer.zip`
+            - **Size**: ~20-25 MB
+            - **Description**: Multiple files in a folder structure
+            - **Usage**:
+              1. Download and extract all files
+              2. Run `ezSLauncher.exe`
+            - **Pros**: Faster startup, easier to debug
+
+            ## ✨ Features
+            
+            - 🔍 Advanced file search with multiple filters
+            - 🎯 Regular expression support
+            - 🌙 Dark mode
+            - 🌐 Multi-language (English, Korean)
+            - ⚡ Execute files with admin rights
+            - 📝 Rename, delete, create shortcuts
+            - 💾 Export results to CSV
+            - 🎨 Custom icons and modern UI
 
             ## ⚠️ First Run
 
@@ -284,29 +385,46 @@ jobs:
 
             ## 🔒 Security
 
-            - **Open Source**: Full source code available in this repository
-            - **SHA256 Hash**: See below to verify file integrity
-            - **VirusTotal**: Scan link provided in build summary
-            - **No Telemetry**: This software does not collect any data
+            - ✅ **Open Source**: Full source code available in this repository
+            - ✅ **SHA256 Hash**: See build summary to verify file integrity
+            - ✅ **VirusTotal**: Scan links provided above
+            - ✅ **No Telemetry**: This software does not collect any data
+            - ✅ **No Network**: Does not connect to internet (except for GitHub link)
 
             ## 💻 System Requirements
 
             - Windows 10 or Windows 11
-            - Administrator privileges (for some features)
+            - Administrator privileges (optional, for some features)
             - ~20MB free disk space
 
-            ## 🐛 Known Issues
+            ## 🌍 Language Support
 
-            None currently. Please report any issues on GitHub!
+            - English (default)
+            - 한국어 (Korean) - Use Language menu to switch
+
+            ## 🛠️ Known Issues
+
+            - First run may be slow while Windows scans the file
+            - Some antivirus software may flag it (false positive)
 
             ## 📝 Changelog
 
             See commit history for detailed changes.
 
+            ## 🆘 Support
+
+            - Report issues on GitHub Issues
+            - Star this repo if you find it useful!
+
             ---
+            
+            **Which version should I download?**
+            - For most users: **Portable version** (single file, easy to use)
+            - For debugging or slower systems: **Installer version** (faster startup)
 
           files: |
-            ezSLauncher.zip
+            ezSLauncher_Portable.zip
+            ezSLauncher_Installer.zip
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
