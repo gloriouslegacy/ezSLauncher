@@ -262,9 +262,12 @@ jobs:
           $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (Test-Path $isccPath) {
             Write-Host "✓ Inno Setup installed successfully"
-            & $isccPath /?
+            Write-Host "ISCC path: $isccPath"
           } else {
             Write-Host "✗ Inno Setup installation failed"
+            Write-Host "Expected path: $isccPath"
+            Write-Host "Searching for ISCC.exe..."
+            Get-ChildItem "C:\Program Files (x86)" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue | Format-Table FullName
             exit 1
           }
 
