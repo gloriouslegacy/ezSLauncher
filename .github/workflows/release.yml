@@ -274,42 +274,97 @@ jobs:
         run: |
           Write-Host "=== Creating Setup Wizard Installer ==="
           
+          # Check if ISS file exists
+          if (-not (Test-Path "ezSLauncher_setup.iss")) {
+            Write-Host "✗ ezSLauncher_setup.iss not found in current directory"
+            Write-Host "Current directory: $PWD"
+            Write-Host "Files in directory:"
+            Get-ChildItem | Format-Table Name
+            exit 1
+          }
+          
+          Write-Host "✓ ezSLauncher_setup.iss found"
+          
           $version = "${{ steps.vars.outputs.version }}"
           $versionClean = $version -replace '-.*',''
           
           # Update version in ISS script
-          $issContent = Get-Content "ezSLauncher_setup.iss" -Raw
+          $issContent = Get-Content "ezSLauncher_setup.iss" -Raw -Encoding UTF8
           $issContent = $issContent -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$versionClean`""
           $issContent | Set-Content "ezSLauncher_setup.iss" -Encoding UTF8
           
           Write-Host "Version set to: $versionClean"
           
+          # Verify build output exists
+          if (-not (Test-Path "dist/ezSLauncher/ezSLauncher.exe")) {
+            Write-Host "✗ dist/ezSLauncher/ezSLauncher.exe not found"
+            Write-Host "Cannot create installer without built files"
+            exit 1
+          }
+          
+          Write-Host "✓ Build output verified"
+          
           # Compile with Inno Setup
           $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           
-          Write-Host "Compiling installer..."
-          & $isccPath "ezSLauncher_setup.iss"
+          if (-not (Test-Path $isccPath)) {
+            Write-Host "✗ Inno Setup compiler not found at: $isccPath"
+            exit 1
+          }
           
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "✗ Inno Setup compilation failed"
+          Write-Host "Compiling installer with Inno Setup..."
+          Write-Host "ISS file: ezSLauncher_setup.iss"
+          Write-Host "Compiler: $isccPath"
+          
+          # Run ISCC with full path and capture output
+          $process = Start-Process -FilePath $isccPath `
+            -ArgumentList "ezSLauncher_setup.iss" `
+            -NoNewWindow `
+            -Wait `
+            -PassThru `
+            -RedirectStandardOutput "iscc_output.txt" `
+            -RedirectStandardError "iscc_error.txt"
+          
+          # Display output
+          if (Test-Path "iscc_output.txt") {
+            Write-Host "`n=== ISCC Output ==="
+            Get-Content "iscc_output.txt"
+          }
+          
+          if (Test-Path "iscc_error.txt") {
+            Write-Host "`n=== ISCC Errors ==="
+            Get-Content "iscc_error.txt"
+          }
+          
+          if ($process.ExitCode -ne 0) {
+            Write-Host "✗ Inno Setup compilation failed with exit code: $($process.ExitCode)"
             exit 1
           }
           
           Write-Host "✓ Setup wizard installer created"
           
           # Verify output
-          $setupFile = Get-ChildItem "installer_output" -Filter "ezSLauncher_Setup_*.exe" | Select-Object -First 1
+          if (-not (Test-Path "installer_output")) {
+            Write-Host "⚠ installer_output directory not created"
+            Write-Host "Checking for alternative output locations..."
+            Get-ChildItem -Filter "*.exe" -Recurse | Where-Object { $_.Name -like "ezSLauncher*" } | Format-Table FullName, Length
+          }
+          
+          $setupFile = Get-ChildItem "installer_output" -Filter "ezSLauncher_Setup_*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          
           if ($setupFile) {
             $size = $setupFile.Length / 1MB
             Write-Host "✓ Setup file: $($setupFile.Name)"
             Write-Host "  Size: $([math]::Round($size, 2)) MB"
             
-            # Rename to simpler name
+            # Copy to simpler name
             $newName = "ezSLauncher_Setup.exe"
             Copy-Item $setupFile.FullName -Destination $newName
             Write-Host "✓ Copied to: $newName"
           } else {
-            Write-Host "✗ Setup file not found"
+            Write-Host "✗ Setup file not found in installer_output"
+            Write-Host "Searching entire directory..."
+            Get-ChildItem -Filter "*.exe" -Recurse | Where-Object { $_.Name -like "*Setup*" } | Format-Table FullName, Length
             exit 1
           }
 
