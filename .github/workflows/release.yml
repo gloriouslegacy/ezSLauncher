@@ -280,6 +280,37 @@ jobs:
           $version = "${{ steps.vars.outputs.version }}"
           $versionClean = $version -replace '-.*',''
           
+          # Check what files exist in the build output
+          Write-Host "`n=== Checking build output ==="
+          Write-Host "Main executable:"
+          if (Test-Path "dist\ezSLauncher\ezSLauncher.exe") {
+            Write-Host "✓ ezSLauncher.exe found"
+          } else {
+            Write-Host "✗ ezSLauncher.exe NOT found"
+          }
+          
+          Write-Host "`nLanguage file:"
+          if (Test-Path "dist\ezSLauncher\lang_ko.ini") {
+            Write-Host "✓ lang_ko.ini found"
+          } else {
+            Write-Host "✗ lang_ko.ini NOT found"
+          }
+          
+          Write-Host "`nIcon folder:"
+          if (Test-Path "dist\ezSLauncher\icon") {
+            Write-Host "✓ icon folder found"
+            Get-ChildItem "dist\ezSLauncher\icon" | Format-Table Name
+          } else {
+            Write-Host "⚠ icon folder NOT found - will use fallback"
+          }
+          
+          Write-Host "`n_internal folder:"
+          if (Test-Path "dist\ezSLauncher\_internal") {
+            Write-Host "✓ _internal folder found"
+          } else {
+            Write-Host "⚠ _internal folder NOT found"
+          }
+          
           # Create ISS file using array of lines
           $issLines = @(
             "; ezSLauncher Inno Setup Script",
@@ -324,7 +355,6 @@ jobs:
             "",
             "; UI settings",
             "WizardStyle=modern",
-            "SetupIconFile=icon\icon.ico",
             "UninstallDisplayIcon={app}\{#MyAppExeName}",
             "",
             "[Languages]",
@@ -332,17 +362,16 @@ jobs:
             "",
             "[Tasks]",
             "Name: `"desktopicon`"; Description: `"Create a desktop shortcut`"; GroupDescription: `"Additional shortcuts:`"; Flags: unchecked",
-            "Name: `"quicklaunchicon`"; Description: `"Create a Quick Launch shortcut`"; GroupDescription: `"Additional shortcuts:`"; Flags: unchecked; OnlyBelowVersion: 6.1",
             "",
             "[Files]",
             "; Main executable",
             "Source: `"dist\ezSLauncher\ezSLauncher.exe`"; DestDir: `"{app}`"; Flags: ignoreversion",
             "",
-            "; Language file",
-            "Source: `"dist\ezSLauncher\lang_ko.ini`"; DestDir: `"{app}`"; Flags: ignoreversion",
+            "; Language file (optional)",
+            "Source: `"dist\ezSLauncher\lang_ko.ini`"; DestDir: `"{app}`"; Flags: ignoreversion skipifsourcedoesntexist",
             "",
-            "; Icon folder",
-            "Source: `"dist\ezSLauncher\icon\*`"; DestDir: `"{app}\icon`"; Flags: ignoreversion recursesubdirs createallsubdirs",
+            "; Icon folder (optional)",
+            "Source: `"dist\ezSLauncher\icon\*`"; DestDir: `"{app}\icon`"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist",
             "",
             "; Internal dependencies",
             "Source: `"dist\ezSLauncher\_internal\*`"; DestDir: `"{app}\_internal`"; Flags: ignoreversion recursesubdirs createallsubdirs",
@@ -354,9 +383,6 @@ jobs:
             "",
             "; Desktop shortcut",
             "Name: `"{autodesktop}\{#MyAppName}`"; Filename: `"{app}\{#MyAppExeName}`"; Tasks: desktopicon",
-            "",
-            "; Quick Launch shortcut",
-            "Name: `"{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}`"; Filename: `"{app}\{#MyAppExeName}`"; Tasks: quicklaunchicon",
             "",
             "[Run]",
             "; Option to run after installation",
@@ -371,10 +397,10 @@ jobs:
           # Save ISS file
           $issLines | Out-File -FilePath "ezSLauncher_setup.iss" -Encoding UTF8
           
-          Write-Host "✓ ISS file created"
+          Write-Host "`n✓ ISS file created"
           Write-Host "Version: $versionClean"
-          Write-Host "`n=== ISS File Content (first 20 lines) ==="
-          Get-Content "ezSLauncher_setup.iss" -TotalCount 20
+          Write-Host "`n=== ISS File Content ==="
+          Get-Content "ezSLauncher_setup.iss"
 
       # Create Windows Installer with Setup Wizard
       - name: Create Setup Wizard Installer
