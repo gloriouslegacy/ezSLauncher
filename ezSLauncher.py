@@ -18,6 +18,20 @@ from typing import List, Dict, Any
 # Configuration file path
 CONFIG_FILE = "app_config.json"
 
+def resource_path(relative_path):
+    """
+    Get absolute path to resource, works for dev and for PyInstaller
+    PyInstaller로 패키징된 리소스의 절대 경로를 반환합니다.
+    """
+    try:
+        # PyInstaller가 생성한 임시 폴더 (_MEIPASS)
+        base_path = sys._MEIPASS
+    except AttributeError:
+        # 개발 환경에서는 현재 디렉토리 사용
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
+
 class FileItem:
     """Represents a file item in the search results"""
     def __init__(self, path: str):
@@ -347,45 +361,38 @@ class FileSearchApp:
         
     def set_icon(self):
         """Set application icon (PyInstaller compatible)"""
-        def resource_path(relative_path):
-            """Get absolute path to resource, works for dev and for PyInstaller"""
-            try:
-                # PyInstaller creates a temp folder and stores path in _MEIPASS
-                base_path = sys._MEIPASS
-            except Exception:
-                base_path = os.path.abspath(".")
-            return os.path.join(base_path, relative_path)
-        
-        # Try different icon paths
+        # Try different icon paths (icon_title.ico first for window icon)
         icon_paths = [
-            resource_path("icon/icon.ico"),
+            resource_path("icon/icon_title.ico"),  # 우선 순위 1: 창 아이콘용
+            resource_path("icon/icon.ico"),         # 우선 순위 2: 일반 아이콘
             resource_path("icon/icon.png"),
+            resource_path("icon_title.ico"),
             resource_path("icon.ico"),
             resource_path("icon.png"),
-            "./icon/icon.ico",
-            "./icon/icon.png",
-            "icon.ico",
-            "icon.png"
         ]
         
         for icon_path in icon_paths:
             if os.path.exists(icon_path):
                 try:
-                    # Try .ico file first (best for Windows)
+                    # Try .ico file first (best for Windows - works for title bar and taskbar)
                     if icon_path.endswith('.ico'):
                         self.root.iconbitmap(icon_path)
+                        print(f"[OK] Window icon loaded: {icon_path}")
                         return
                 except Exception as e:
-                    pass
+                    print(f"[WARN] Failed to load .ico: {e}")
                 
                 try:
-                    # Try PNG with iconphoto
+                    # Try PNG with iconphoto (fallback)
                     if icon_path.endswith('.png'):
                         img = tk.PhotoImage(file=icon_path)
                         self.root.iconphoto(True, img)
+                        print(f"[OK] Window icon loaded from PNG: {icon_path}")
                         return
                 except Exception as e:
-                    pass
+                    print(f"[WARN] Failed to load .png: {e}")
+        
+        print("[WARN] No icon file found - using default icon")
     
     def create_menu_bar(self):
         """Create menu bar with Help menu"""

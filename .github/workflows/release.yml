@@ -304,6 +304,8 @@ jobs:
             See commit history for detailed changes.
 
             ---
+
+            **Build Method**: PyInstaller 6.3.0 (no UPX) | **Icon**: Embedded | **Testing**: Automated
           files: |
             ezSLauncher.zip
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
