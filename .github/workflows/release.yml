@@ -1,4 +1,4 @@
-name: Build and Release
+name: Build and Release (with Icon Post-Processing)
 
 on:
   push:
@@ -48,21 +48,41 @@ jobs:
           pip install -r requirements.txt
         shell: pwsh
 
-      # version_info.txt 생성 (버전 자동 업데이트)
+      # ResourceHacker 다운로드 (아이콘 강제 주입용)
+      - name: Download ResourceHacker
+        shell: pwsh
+        run: |
+          Write-Host "Downloading ResourceHacker..."
+          Invoke-WebRequest -Uri "http://www.angusj.com/resourcehacker/resource_hacker.zip" -OutFile "rh.zip"
+          Expand-Archive -Path "rh.zip" -DestinationPath "ResourceHacker"
+          Write-Host "ResourceHacker downloaded and extracted"
+
+      # 아이콘 파일 존재 확인
+      - name: Check icon files
+        shell: pwsh
+        run: |
+          Write-Host "=== Checking icon files ==="
+          if (Test-Path "icon/icon.ico") {
+            Write-Host "[OK] icon/icon.ico exists"
+            $iconFile = Get-Item "icon/icon.ico"
+            Write-Host "Size: $($iconFile.Length) bytes"
+          } else {
+            Write-Host "[ERROR] icon/icon.ico NOT FOUND!"
+            exit 1
+          }
+
+      # version_info.txt 생성
       - name: Generate version_info.txt
         shell: pwsh
         run: |
           $version = "${{ steps.vars.outputs.version }}"
           $versionParts = $version -replace '-.*','' -split '\.'
           
-          # 버전을 3자리로 맞추기 (예: 1.0 -> 1.0.0)
           while ($versionParts.Count -lt 3) {
             $versionParts += "0"
           }
           
-          # filevers는 4자리 필요 (Windows 요구사항)
           $filevers = "($($versionParts[0]), $($versionParts[1]), $($versionParts[2]), 0)"
-          # 표시용 버전은 3자리
           $versionStr = "$($versionParts[0]).$($versionParts[1]).$($versionParts[2])"
           
           $versionInfo = @"
@@ -70,9 +90,7 @@ jobs:
           
           VSVersionInfo(
             ffi=FixedFileInfo(
-              # 파일 버전
               filevers=$filevers,
-              # 제품 버전
               prodvers=$filevers,
               mask=0x3f,
               flags=0x0,
@@ -109,33 +127,86 @@ jobs:
           
           $versionInfo | Out-File -FilePath "version_info.txt" -Encoding UTF8
 
-      # PyInstaller로 빌드
+      # PyInstaller로 빌드 (일단 아이콘 없이 또는 있는 상태로)
       - name: Build with PyInstaller
-        run: |
-          pyinstaller --onefile --windowed --name "ezSLauncher" --clean --uac-admin --version-file "version_info.txt" --icon "icon\icon.ico" --add-data "icon\icon_title.ico;icon" "ezSLauncher.py"
         shell: pwsh
+        run: |
+          Write-Host "=== Building EXE ==="
+          pyinstaller --onefile `
+            --windowed `
+            --name "ezSLauncher" `
+            --clean `
+            --uac-admin `
+            --version-file "version_info.txt" `
+            --icon "icon\icon.ico" `
+            --add-data "icon\icon_title.ico;icon" `
+            "ezSLauncher.py"
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "PyInstaller failed!"
+            exit 1
+          }
 
-      # - name: Build with PyInstaller (Use CMD for Reliable Icon Inject)
-      #   run: |
-      #     # PyInstaller 명령 자체는 셸 명령이므로, 셸을 cmd로 변경
-      #     pyinstaller --onefile --windowed --name "ezSLauncher" --clean --uac-admin --version-file "version_info.txt" --icon "icon\icon.ico" --add-data "icon\icon_title.ico;icon" "ezSLauncher.py"
-      #   shell: cmd
+      # ResourceHacker로 아이콘 강제 주입
+      - name: Inject icon with ResourceHacker
+        shell: pwsh
+        run: |
+          Write-Host "=== Injecting icon with ResourceHacker ==="
+          
+          $exePath = "dist\ezSLauncher.exe"
+          $iconPath = "icon\icon.ico"
+          $rhPath = "ResourceHacker\ResourceHacker.exe"
+          
+          if (-not (Test-Path $exePath)) {
+            Write-Host "[ERROR] EXE not found: $exePath"
+            exit 1
+          }
+          
+          if (-not (Test-Path $iconPath)) {
+            Write-Host "[ERROR] Icon not found: $iconPath"
+            exit 1
+          }
+          
+          # 백업 생성
+          Copy-Item $exePath "$exePath.bak"
+          
+          # ResourceHacker로 아이콘 교체
+          # -open: 열 파일
+          # -save: 저장할 파일
+          # -action: addoverwrite (덮어쓰기)
+          # -res: 리소스 파일 (아이콘)
+          # -mask: ICONGROUP,MAINICON, (메인 아이콘)
+          & $rhPath -open $exePath -save $exePath -action addoverwrite -res $iconPath -mask ICONGROUP,MAINICON,
+          
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "[SUCCESS] Icon injected successfully!"
+            Remove-Item "$exePath.bak"
+          } else {
+            Write-Host "[WARNING] ResourceHacker failed, restoring backup"
+            Move-Item "$exePath.bak" $exePath -Force
+          }
 
-      # VirusTotal 스캔 결과 URL 생성 (선택적)
+      # 빌드된 EXE 확인
+      - name: Verify EXE
+        shell: pwsh
+        run: |
+          if (Test-Path "dist/ezSLauncher.exe") {
+            $exeFile = Get-Item "dist/ezSLauncher.exe"
+            Write-Host "=== EXE Build Complete ==="
+            Write-Host "File size: $($exeFile.Length) bytes"
+            Write-Host "Created: $($exeFile.CreationTime)"
+          } else {
+            Write-Host "[ERROR] EXE file not found!"
+            exit 1
+          }
+
+      # VirusTotal 스캔 결과 URL 생성
       - name: Generate file hash
         shell: pwsh
         run: |
           $hash = Get-FileHash -Path "dist/ezSLauncher.exe" -Algorithm SHA256
           Write-Host "SHA256: $($hash.Hash)"
-          Write-Host "VirusTotal URL: https://www.virustotal.com/gui/file/$($hash.Hash)"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Info`n- SHA256: ``$($hash.Hash)```n- [VirusTotal Scan](https://www.virustotal.com/gui/file/$($hash.Hash))"
-
-      # 빌드 결과 확인 (디버깅용)
-      - name: List build output
-        shell: pwsh
-        run: |
-          Write-Host "=== Build Output ==="
-          Get-ChildItem dist -Recurse | Format-Table Name, Length, FullName
 
       # 릴리스 패키지 준비
       - name: Prepare release package
@@ -144,11 +215,9 @@ jobs:
           mkdir release
           Copy-Item dist/ezSLauncher.exe release/
           
-          # 필요한 경우 추가 파일 복사 (예: README, LICENSE 등)
           if (Test-Path "README.md") { Copy-Item README.md release/ }
           if (Test-Path "LICENSE") { Copy-Item LICENSE release/ }
           
-          # ZIP 파일 생성
           Compress-Archive -Path release/* -DestinationPath ezSLauncher.zip -Force
 
       # GitHub Release 생성
@@ -160,8 +229,8 @@ jobs:
           body: |
             📦 Release Information
 
-            Main Program: **ezSLauncher.exezip**  
-            → Contains executable file (ezSLauncher.exe)
+            Main Program: **ezSLauncher.exe.zip**  
+            → Contains executable file (ezSLauncher.exe) with icon
 
             ## Installation
             1. Download ezSLauncher.zip
@@ -171,7 +240,8 @@ jobs:
             ## Notes
             - Windows Defender may show a warning
             - Administrator privileges required
-            - This is open-source software - source code available in repository
+            - Icon applied using ResourceHacker
+            - This is open-source software
 
             ## SHA256 Hash
             Check file integrity after download
