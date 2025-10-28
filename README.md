@@ -779,13 +779,6 @@ GitHub Issues에 "Feature Request" 라벨로 등록
 ### 번역 기여
 `languages/lang_xx.ini` 파일 작성 후 Pull Request
 
-### 코드 기여
-1. Fork
-2. Feature Branch 생성
-3. Commit
-4. Push
-5. Pull Request
-
 ---
 
 ## 라이선스
