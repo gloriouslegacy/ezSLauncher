@@ -1,287 +1,824 @@
-# File Search & Launcher
+# ezSLauncher
 
-Advanced file search and execution application for Windows with GUI interface.
+고급 파일 검색 및 실행 도구
 
-## Features
+## 목차
 
-### Core Features
-- **Advanced Search Filters**: Search by name, extension, and path
-- **Recursive Directory Search**: Search in subdirectories
-- **Multiple File Selection**: Checkbox-based selection system
-- **Sequential Execution**: Execute multiple files in order
-- **Context Menu**: Right-click menu with Windows Explorer-like options
-- **Administrator Execution**: Run files with elevated privileges
-- **Persistent Settings**: Automatically saves and loads search preferences
+- [소개](#소개)
+- [주요 기능](#주요-기능)
+- [시스템 요구사항](#시스템-요구사항)
+- [설치 방법](#설치-방법)
+- [사용 방법](#사용-방법)
+- [정규표현식 가이드](#정규표현식-가이드)
+- [컨텍스트 메뉴 기능](#컨텍스트-메뉴-기능)
+- [FAQ](#faq)
+- [문제 해결](#문제-해결)
+- [라이선스](#라이선스)
 
-### User Interface
-- **Modern GUI**: Clean and intuitive Tkinter interface
-- **Treeview Results**: Display files with type, date, size, and path
-- **Checkbox Selection**: Visual checkbox indicators (☐/☑)
-- **Progress Indicator**: Shows search progress
-- **Status Bar**: Real-time status updates
-- **Custom Icons**: Support for .ico and .png icons
+---
 
-### Execution Options
-- **Double-click**: Normal file execution (like Windows Explorer)
-- **Right-click Menu**:
-  - Open
-  - Run as Administrator
-  - Open File Location
-  - Copy Path
-  - Properties
+## 소개
 
-### Background Processing
-- **Threaded Search**: Non-blocking UI during search
-- **Threaded Execution**: Sequential file execution in background
-- **Real-time Updates**: Progress feedback during operations
+ezSLauncher는 Windows에서 파일을 빠르게 검색하고 실행할 수 있는 고급 도구입니다. 다양한 필터 옵션, 정규표현식 지원, 배치 작업 등 강력한 기능을 제공합니다.
 
-## Installation
+### 특징
 
-### Prerequisites
-- Windows 10/11
-- Python 3.7 or higher
+- 빠른 파일 검색 (이름, 확장자, 경로)
+- 정규표현식 지원
+- 여러 파일 동시 실행
+- 관리자 권한 실행
+- 다크 모드 지원
+- 다국어 지원 (한국어, 영어)
+- 검색 결과 내보내기 (CSV)
+- 파일 작업 (복사, 이동, 삭제, 이름 바꾸기)
+- 시작프로그램 등록
 
-### Setup
-1. Install Python if not already installed (download from python.org)
+---
 
-2. Create project directory:
+## 주요 기능
+
+### 1. 파일 검색
+
+#### 기본 검색
+- **이름 필터**: 파일 이름으로 검색
+- **확장자 필터**: 특정 확장자 파일만 검색
+- **경로 필터**: 특정 경로를 포함하는 파일 검색
+- **하위 디렉토리 포함**: 선택한 폴더의 모든 하위 폴더 검색
+
+#### 다중 값 지원
+여러 값을 입력할 때 다음 구분자를 사용할 수 있습니다:
+- 쉼표 (,)
+- 세미콜론 (;)
+- 공백
+
+**예시:**
+```
+확장자: exe, msi, bat
+확장자: exe;msi;bat
+확장자: exe msi bat
+```
+
+#### 정규표현식 검색
+"정규 표현식 사용" 체크박스를 활성화하면 고급 패턴 검색이 가능합니다.
+
+### 2. 파일 실행
+
+#### 단일 실행
+- 더블클릭으로 파일 실행
+- 우클릭 → "열기"
+
+#### 배치 실행
+1. 체크박스로 여러 파일 선택
+2. "선택 항목 실행" 버튼 클릭
+3. 확인 후 순차 실행
+
+#### 관리자 권한 실행
+우클릭 → "관리자 권한으로 실행"
+
+### 3. 컨텍스트 메뉴 (우클릭)
+
+#### 기본 작업
+- **열기**: 파일을 기본 프로그램으로 실행
+- **관리자 권한으로 실행**: 관리자 권한 필요 시
+- **연결 프로그램**: "연결 프로그램" 대화상자 열기
+- **파일 위치 열기**: 탐색기에서 파일 위치 표시
+
+#### 파일 작업
+- **복사**: 선택한 파일을 다른 폴더로 복사
+- **이동**: 선택한 파일을 다른 폴더로 이동
+- **이름 바꾸기**: 파일 이름 변경
+- **삭제**: 파일 삭제 (휴지통으로 이동)
+- **바로가기 만들기**: 바탕화면에 바로가기 생성
+
+#### 시스템 통합
+- **시작프로그램 등록**: 선택한 파일을 Windows 시작프로그램에 추가
+- **경로 복사**: 전체 경로를 클립보드에 복사
+- **속성**: 파일 속성 창 열기
+
+### 4. 검색 결과 관리
+
+#### 선택 기능
+- **모두 선택**: 모든 검색 결과 선택
+- **선택 해제**: 모든 선택 해제
+- 개별 체크박스로 선택/해제
+
+#### 내보내기
+"결과 내보내기" 버튼으로 CSV 파일로 저장:
+- 파일 이름
+- 파일 형식
+- 수정 날짜
+- 크기
+- 전체 경로
+
+### 5. 사용자 인터페이스
+
+#### 다크 모드
+메뉴: 보기 → 다크 모드
+- 눈의 피로 감소
+- 부드러운 색상 팔레트
+- 설정 자동 저장
+
+#### 다국어 지원
+메뉴: 언어 → 한국어 / English
+- 한국어
+- 영어
+- 설정 자동 저장
+
+#### 시작프로그램 폴더 바로가기
+"시작프로그램 폴더" 버튼 클릭 시 Windows 시작프로그램 폴더 열기
+
+---
+
+## 시스템 요구사항
+
+### 최소 사양
+- **운영체제**: Windows 7 이상 (Windows 10/11 권장)
+- **메모리**: 100 MB RAM
+- **디스크 공간**: 50 MB
+
+### 권장 사양
+- **운영체제**: Windows 10/11
+- **메모리**: 200 MB RAM
+- **.NET Framework**: 관리자 권한 실행 시 필요
+
+### 선택 사항
+- **pywin32**: 시작프로그램 등록 기능 사용 시 필요
+  ```bash
+  pip install pywin32
+  ```
+
+---
+
+## 설치 방법
+
+### 방법 1: 포터블 버전 (권장)
+
+1. GitHub Releases에서 `ezSLauncher-vX.X.X-portable.zip` 다운로드
+2. 원하는 위치에 압축 해제
+3. `ezSLauncher.exe` 실행
+
+**특징:**
+- 설치 불필요
+- USB 등에서 실행 가능
+- 레지스트리 사용 안함
+
+### 방법 2: 설치형
+
+1. GitHub Releases에서 `ezSLauncher-vX.X.X-installer.exe` 다운로드
+2. 설치 프로그램 실행
+3. 설치 마법사 따라가기
+4. 시작 메뉴 또는 바탕화면에서 실행
+
+**특징:**
+- 프로그램 추가/제거에 등록
+- 자동 업데이트 지원 (향후)
+- 시스템 통합
+
+### 방법 3: 소스코드 실행
+
+**Python 환경 필요:**
 ```bash
-mkdir FileSearchApp
-cd FileSearchApp
+# 저장소 클론
+git clone https://github.com/yourusername/ezSLauncher.git
+cd ezSLauncher
+
+# 의존성 설치
+pip install -r requirements.txt
+
+# 실행
+python ezSLauncher.py
 ```
 
-3. Save the script as `file_search_launcher.py`
+---
 
-4. Create icon directory (optional):
-```bash
-mkdir icon
+## 사용 방법
+
+### 기본 검색
+
+1. **검색 디렉토리 선택**
+   - "찾아보기" 버튼 클릭
+   - 검색할 폴더 선택
+   - 또는 경로 직접 입력
+
+2. **필터 설정**
+   - 이름: 찾고자 하는 파일 이름 (예: "report")
+   - 확장자: 파일 형식 (예: "pdf, docx")
+   - 경로 포함: 특정 경로 포함 파일 (예: "2024")
+
+3. **검색 옵션**
+   - "하위 디렉토리 포함" 체크 (기본: 활성화)
+
+4. **검색 실행**
+   - "검색" 버튼 클릭
+   - 진행 상황 실시간 표시
+   - "정지" 버튼으로 중단 가능
+
+### 고급 검색 (정규표현식)
+
+1. "정규 표현식 사용" 체크박스 활성화
+2. 정규표현식 패턴 입력 (아래 가이드 참조)
+3. 검색 실행
+
+### 파일 작업
+
+#### 단일 파일
+1. 파일 우클릭
+2. 원하는 작업 선택
+3. 대화상자 따라가기
+
+#### 여러 파일
+1. 체크박스로 파일 여러 개 선택
+2. 우클릭
+3. "복사 (N개 파일)" 또는 "이동 (N개 파일)" 선택
+4. 대상 폴더 선택
+5. 진행 상황 확인
+
+### 시작프로그램 등록
+
+**방법 1: 컨텍스트 메뉴**
+1. 시작 시 실행하고 싶은 프로그램 선택
+2. 우클릭 → "시작프로그램 등록"
+3. 확인
+
+**방법 2: 시작프로그램 폴더 직접 접근**
+1. "시작프로그램 폴더" 버튼 클릭
+2. 탐색기에서 시작프로그램 폴더 열림
+3. 수동으로 바로가기 추가/삭제
+
+### 검색 결과 내보내기
+
+1. 검색 완료 후
+2. "결과 내보내기" 버튼 클릭
+3. CSV 파일 저장 위치 선택
+4. Excel 또는 텍스트 편집기로 열기
+
+**CSV 포함 정보:**
+- 파일 이름
+- 파일 형식
+- 수정 날짜
+- 파일 크기
+- 전체 경로
+
+---
+
+## 정규표현식 가이드
+
+### 기본 문법
+
+#### 문자 매칭
+- `.` : 임의의 한 문자
+- `\d` : 숫자 (0-9)
+- `\w` : 문자 또는 숫자 (a-z, A-Z, 0-9, _)
+- `\s` : 공백 문자
+- `[abc]` : a, b, c 중 하나
+- `[a-z]` : a부터 z까지 소문자
+- `[0-9]` : 0부터 9까지 숫자
+
+#### 반복 수량자
+- `*` : 0회 이상 반복
+- `+` : 1회 이상 반복
+- `?` : 0회 또는 1회
+- `{n}` : 정확히 n회
+- `{n,}` : n회 이상
+- `{n,m}` : n회 이상 m회 이하
+
+#### 위치 지정
+- `^` : 문자열 시작
+- `$` : 문자열 끝
+- `\b` : 단어 경계
+
+#### 그룹화
+- `(abc)` : 그룹화
+- `(a|b)` : a 또는 b
+
+### 실전 예제
+
+#### 1. 특정 확장자로 끝나는 파일
+```regex
+.*\.exe$
+```
+설명: .exe로 끝나는 모든 파일
+
+예시:
+- setup.exe ✓
+- program.exe ✓
+- readme.txt ✗
+
+#### 2. 특정 문자로 시작하는 파일
+```regex
+^test.*
+```
+설명: test로 시작하는 모든 파일
+
+예시:
+- test_report.pdf ✓
+- testfile.txt ✓
+- my_test.doc ✗
+
+#### 3. 숫자가 포함된 파일
+```regex
+.*\d+.*
+```
+설명: 숫자가 하나 이상 포함된 파일
+
+예시:
+- report2024.pdf ✓
+- file123.txt ✓
+- document.doc ✗
+
+#### 4. 날짜 형식 파일 (YYYY-MM-DD)
+```regex
+.*\d{4}-\d{2}-\d{2}.*
+```
+설명: 날짜 형식(2024-01-15)이 포함된 파일
+
+예시:
+- report_2024-01-15.pdf ✓
+- backup_2024-12-31.zip ✓
+- file_20240115.txt ✗ (하이픈 없음)
+
+#### 5. 특정 단어 + 숫자 조합
+```regex
+report_\d{4}
+```
+설명: report_ 뒤에 4자리 숫자가 오는 파일
+
+예시:
+- report_2024.pdf ✓
+- report_0001.txt ✓
+- report_24.doc ✗ (2자리)
+
+#### 6. 괄호 안 숫자 찾기
+```regex
+.*\(\d+\).*
+```
+설명: 괄호 안에 숫자가 있는 파일
+
+예시:
+- document (1).pdf ✓
+- file (123).txt ✓
+- file(abc).doc ✗
+
+#### 7. 여러 확장자 찾기
+```regex
+.*\.(exe|msi|bat)$
+```
+설명: exe, msi, bat 확장자 파일
+
+예시:
+- setup.exe ✓
+- installer.msi ✓
+- script.bat ✓
+- readme.txt ✗
+
+#### 8. 대소문자 구분 없이 찾기
+```regex
+(?i)readme.*
+```
+설명: readme로 시작하는 파일 (대소문자 무시)
+
+예시:
+- README.txt ✓
+- Readme.md ✓
+- readme.pdf ✓
+
+#### 9. 백업 파일 찾기
+```regex
+.*\.(backup|bak|old)$
+```
+설명: 백업 관련 확장자
+
+예시:
+- file.backup ✓
+- data.bak ✓
+- config.old ✓
+
+#### 10. 임시 파일 찾기
+```regex
+^(tmp|temp).*|.*\.(tmp|temp)$
+```
+설명: tmp/temp로 시작하거나 끝나는 파일
+
+예시:
+- temp_file.txt ✓
+- data.tmp ✓
+- tmpdata.log ✓
+
+### 정규표현식 테스트 도구
+
+온라인에서 정규표현식을 테스트하고 학습할 수 있는 사이트:
+
+1. **Regex101** (https://regex101.com/)
+   - 실시간 테스트
+   - 패턴 설명
+   - 다양한 언어 지원
+
+2. **RegExr** (https://regexr.com/)
+   - 시각적 패턴 표시
+   - 치트 시트 제공
+   - 커뮤니티 예제
+
+3. **RegexPal** (https://www.regexpal.com/)
+   - 간단한 인터페이스
+   - 빠른 테스트
+
+### 추가 학습 자료
+
+#### 한국어
+- 생활코딩 정규표현식: https://opentutorials.org/course/909/5142
+- 위키백과 정규 표현식: https://ko.wikipedia.org/wiki/정규_표현식
+
+#### 영어
+- MDN Regular Expressions: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions
+- Regular-Expressions.info: https://www.regular-expressions.info/
+- Regex Tutorial: https://regextutorial.org/
+
+---
+
+## 컨텍스트 메뉴 기능
+
+### 파일 실행
+| 메뉴 | 설명 | 단축키 |
+|------|------|--------|
+| 열기 | 기본 프로그램으로 파일 실행 | 더블클릭 |
+| 관리자 권한으로 실행 | UAC 권한 상승 후 실행 | - |
+| 연결 프로그램 | "연결 프로그램" 대화상자 표시 | - |
+
+### 파일 탐색
+| 메뉴 | 설명 |
+|------|------|
+| 파일 위치 열기 | 탐색기에서 파일 위치 표시 |
+| 경로 복사 | 전체 경로를 클립보드에 복사 |
+| 속성 | 파일 속성 정보 표시 |
+
+### 파일 작업
+| 메뉴 | 설명 | 다중 파일 |
+|------|------|-----------|
+| 복사 | 다른 폴더로 복사 | ✓ |
+| 이동 | 다른 폴더로 이동 | ✓ |
+| 이름 바꾸기 | 파일 이름 변경 | ✗ |
+| 삭제 | 휴지통으로 이동 | ✗ |
+| 바로가기 만들기 | 바탕화면에 바로가기 | ✗ |
+
+### 시스템 통합
+| 메뉴 | 설명 | 다중 파일 |
+|------|------|-----------|
+| 시작프로그램 등록 | Windows 시작 시 자동 실행 | ✓ |
+
+### 다중 파일 작업
+
+체크박스로 여러 파일을 선택하면:
+- "복사 (5개 파일)"
+- "이동 (5개 파일)"
+- "시작프로그램 등록 (3개 파일)"
+
+처럼 파일 개수가 메뉴에 표시됩니다.
+
+---
+
+## FAQ
+
+### 일반 질문
+
+**Q: ezSLauncher는 무료인가요?**
+A: 네, 완전 무료 오픈소스 소프트웨어입니다.
+
+**Q: Windows 전용인가요?**
+A: 네, 현재는 Windows만 지원합니다. (Windows 7 이상)
+
+**Q: 설치가 필요한가요?**
+A: 포터블 버전은 설치 없이 실행 가능합니다. 설치형도 제공됩니다.
+
+**Q: 바이러스 검사는 안전한가요?**
+A: 일부 백신이 PyInstaller로 만든 프로그램을 오탐할 수 있습니다. 소스코드를 직접 확인하거나 VirusTotal에서 검사할 수 있습니다.
+
+### 검색 관련
+
+**Q: 검색이 너무 느려요.**
+A: 
+- 검색 범위를 줄이세요 (C:\ 전체 대신 특정 폴더)
+- 필터를 더 구체적으로 설정하세요
+- SSD 사용을 권장합니다
+
+**Q: 숨김 파일도 검색되나요?**
+A: 네, 숨김 파일과 시스템 파일도 검색됩니다.
+
+**Q: 네트워크 드라이브도 검색 가능한가요?**
+A: 네, 마운트된 네트워크 드라이브도 검색 가능합니다.
+
+**Q: 검색 결과를 저장할 수 있나요?**
+A: "결과 내보내기" 버튼으로 CSV 파일로 저장할 수 있습니다.
+
+### 정규표현식 관련
+
+**Q: 정규표현식이 너무 어려워요.**
+A: 
+- 처음에는 기본 검색 기능만 사용하세요
+- 필요할 때 간단한 패턴부터 시작하세요 (예: `.*\.exe$`)
+- 정규표현식 테스트 도구(Regex101)를 활용하세요
+
+**Q: 정규표현식 예제는 어디서 찾나요?**
+A: 
+- 이 문서의 "정규표현식 가이드" 섹션 참조
+- Regex101.com의 Library 탭
+- Stack Overflow에서 검색
+
+**Q: 정규표현식이 작동하지 않아요.**
+A: 
+- "정규 표현식 사용" 체크박스가 활성화되어 있는지 확인
+- 특수 문자는 백슬래시로 이스케이프 (예: `\.`, `\(`, `\)`)
+- Regex101.com에서 패턴 테스트
+
+### 실행 관련
+
+**Q: 배치 파일(.bat)이 실행되지 않아요.**
+A: 
+- 배치 파일은 새 콘솔 창에서 실행됩니다
+- `cmd /k` 옵션으로 창이 열린 채 유지됩니다
+- 관리자 권한이 필요하면 "관리자 권한으로 실행" 사용
+
+**Q: 관리자 권한으로 실행이 안 돼요.**
+A: 
+- UAC(사용자 계정 컨트롤)가 활성화되어 있는지 확인
+- 이미 관리자 권한으로 ezSLauncher를 실행 중인지 확인
+- Windows Defender나 백신 프로그램 예외 등록
+
+**Q: 프로그램이 실행되었는데 창이 안 보여요.**
+A: 
+- 콘솔 앱의 경우 빠르게 실행되고 종료될 수 있습니다
+- 백그라운드 프로세스일 수 있습니다 (작업 관리자 확인)
+- 파일 연결이 잘못되었을 수 있습니다
+
+### 파일 작업 관련
+
+**Q: 파일 복사/이동 중 에러가 나요.**
+A: 
+- 대상 폴더에 쓰기 권한이 있는지 확인
+- 충분한 디스크 공간이 있는지 확인
+- 파일이 다른 프로그램에서 사용 중인지 확인
+- 관리자 권한으로 ezSLauncher 실행 시도
+
+**Q: 여러 파일 작업 시 중간에 멈춰요.**
+A: 
+- 파일 중복 시 "취소" 버튼을 누르면 중단됩니다
+- "예" 또는 "아니오"를 선택하여 계속 진행하세요
+- 완료 요약에서 성공/실패 개수 확인
+
+**Q: 시작프로그램 등록이 안 돼요.**
+A: 
+- pywin32 모듈 설치 필요: `pip install pywin32`
+- Windows 시작프로그램 폴더 권한 확인
+- 이미 등록된 프로그램은 덮어쓰기 확인
+
+### UI 관련
+
+**Q: 다크 모드가 일부만 적용돼요.**
+A: 프로그램을 재시작하세요. 설정은 자동 저장됩니다.
+
+**Q: 한국어가 깨져 보여요.**
+A: 
+- lang_ko.ini 파일이 UTF-8 인코딩인지 확인
+- Windows 지역 설정 확인
+- 프로그램 재시작
+
+**Q: 체크박스를 클릭해도 선택이 안 돼요.**
+A: 
+- 체크박스 아이콘 근처(왼쪽 50px 이내)를 클릭하세요
+- 또는 스페이스 키로 선택/해제
+
+**Q: 모두 선택하면 프로그램이 멈춰요.**
+A: 
+- 대량의 파일(10,000개 이상) 선택 시 몇 초 소요될 수 있습니다
+- 배치 처리로 최적화되어 있으나, 잠시 기다려주세요
+
+### 업데이트 관련
+
+**Q: 자동 업데이트 기능이 있나요?**
+A: 향후 버전에 추가될 예정입니다.
+
+**Q: 최신 버전은 어디서 확인하나요?**
+A: GitHub Releases 페이지를 확인하세요.
+
+**Q: 업데이트하면 설정이 초기화되나요?**
+A: 아니요, config.json과 lang_ko.ini는 보존됩니다.
+
+---
+
+## 문제 해결
+
+### 프로그램이 시작되지 않을 때
+
+**증상:** 더블클릭해도 실행되지 않음
+
+**해결 방법:**
+1. Windows Defender 또는 백신 프로그램 예외 등록
+2. 관리자 권한으로 실행
+3. Visual C++ 재배포 패키지 설치
+4. Windows 업데이트 확인
+
+### 검색 결과가 없을 때
+
+**증상:** 분명히 파일이 있는데 검색 결과가 없음
+
+**해결 방법:**
+1. 검색 경로가 올바른지 확인
+2. "하위 디렉토리 포함" 체크 확인
+3. 필터가 너무 제한적이지 않은지 확인
+4. 정규표현식 패턴 오류 확인
+5. 파일 권한 확인 (접근 불가 파일은 검색 안 됨)
+
+### "연결 프로그램" 창이 사라질 때
+
+**증상:** "연결 프로그램" 클릭 시 창이 깜빡이고 사라짐
+
+**해결 방법:**
+1. 다시 클릭해보세요 (두 번째 시도에 성공)
+2. 프로그램 재시작
+3. 파일을 직접 탐색기에서 우클릭 → 연결 프로그램
+
+### 파일이 실행되지 않을 때
+
+**증상:** 파일 실행 시 아무 반응 없음 또는 에러
+
+**해결 방법:**
+1. 파일 연결 프로그램이 설치되어 있는지 확인
+2. "연결 프로그램"으로 프로그램 지정
+3. 파일이 손상되지 않았는지 확인
+4. 관리자 권한으로 실행 시도
+5. 백신 프로그램의 실시간 검사 일시 중지
+
+### 다크 모드 문제
+
+**증상:** 다크 모드 설정이 저장되지 않음
+
+**해결 방법:**
+1. config.json 파일 쓰기 권한 확인
+2. AppData 폴더 접근 권한 확인
+3. 프로그램을 관리자 권한으로 실행
+4. config.json 파일 삭제 후 재시작 (초기화)
+
+### 한글 입력 문제
+
+**증상:** 한글 입력이 깨지거나 표시되지 않음
+
+**해결 방법:**
+1. Windows 지역 설정 확인
+2. 유니코드 UTF-8 언어 지원 활성화
+3. lang_ko.ini 파일 인코딩 확인 (UTF-8)
+
+### 메모리 과다 사용
+
+**증상:** 프로그램이 메모리를 많이 사용
+
+**해결 방법:**
+1. 검색 범위를 줄이세요
+2. 대량의 파일(수만 개) 검색 시 정상
+3. 검색 완료 후 "결과 지우기"로 메모리 해제
+4. 프로그램 재시작
+
+### 로그 파일 확인
+
+문제 진단을 위해 로그 확인:
+
+**위치:** 프로그램 실행 폴더 또는 AppData
+
+**로그 활성화:**
+```python
+# 개발자 모드로 실행 (향후 버전)
+ezSLauncher.exe --debug
 ```
 
-5. Add your icons to the icon folder:
-   - `icon/icon.ico` (Windows icon format)
-   - `icon/icon.png` (fallback PNG format)
+---
 
-### No Additional Dependencies Required
-The application uses only Python standard library:
-- tkinter (included with Python on Windows)
-- os, sys, json, subprocess, threading, pathlib, datetime
+## 단축키
 
-## Usage
+| 단축키 | 기능 |
+|--------|------|
+| F5 | 검색 |
+| Ctrl + A | 모두 선택 |
+| Ctrl + D | 선택 해제 |
+| Enter | 선택한 파일 실행 |
+| Delete | 선택한 파일 삭제 |
+| F2 | 이름 바꾸기 |
+| Space | 체크박스 토글 |
+| 더블클릭 | 파일 실행 |
+| 우클릭 | 컨텍스트 메뉴 |
 
-### Running the Application
-```bash
-python file_search_launcher.py
-```
+---
 
-Or double-click the `file_search_launcher.py` file in Windows Explorer.
+## 설정 파일
 
-### Creating a Shortcut
-1. Right-click on `file_search_launcher.py`
-2. Select "Create shortcut"
-3. Right-click the shortcut → Properties
-4. Change "Target" to: `pythonw.exe "C:\path\to\file_search_launcher.py"`
-5. Set icon if desired
+### config.json
 
-### Basic Workflow
-
-#### 1. Set Search Filters
-- **Name**: Filter by filename (partial match)
-- **Extension**: Filter by file extension (e.g., .txt, .exe)
-- **Path Contains**: Filter by path content
-- **All filters work together** (AND logic)
-
-#### 2. Select Search Directory
-- Click "Browse..." button
-- Navigate to desired folder
-- Select "Include Subdirectories" for recursive search
-
-#### 3. Execute Search
-- Click "🔍 Search" button
-- Wait for results to appear
-- View results count in status bar
-
-#### 4. Work with Results
-- **Check files**: Click checkbox or press Space
-- **Select All**: Click "☑ Select All"
-- **Select None**: Click "☐ Select None"
-- **Double-click**: Execute single file
-- **Right-click**: Show context menu
-
-#### 5. Execute Selected Files
-- Check desired files
-- Click "▶ Execute Selected"
-- Confirm execution
-- Files will open sequentially
-
-### Context Menu Options
-
-#### Open
-Normal file execution using default associated program
-
-#### Run as Administrator
-Execute with elevated privileges (shows UAC prompt)
-
-#### Open File Location
-Open Windows Explorer at file location with file selected
-
-#### Copy Path
-Copy full file path to clipboard
-
-#### Properties
-Show detailed file information:
-- Name
-- Type
-- Location
-- Size
-- Modified date
-- Full path
-
-### Tips & Tricks
-
-#### Filter Examples
-```
-Name: "report" → Finds: report.pdf, annual_report.docx, etc.
-Extension: ".py" → Finds: All Python files
-Path: "documents" → Finds: Files with "documents" in path
-```
-
-#### Combining Filters
-```
-Name: "invoice"
-Extension: ".pdf"
-Path: "2025"
-→ Finds: invoice*.pdf files in paths containing "2025"
-```
-
-#### Keyboard Shortcuts
-- **Space**: Toggle checkbox on selected item
-- **Double-click**: Execute file
-- **Right-click**: Context menu
-
-#### Settings Persistence
-All settings are automatically saved:
-- Search filters
-- Search directory
-- Recursive option
-
-Settings are stored in `app_config.json` and restored on next launch.
-
-## Configuration File
-
-The application creates `app_config.json` to store settings:
+위치: `%APPDATA%\ezSLauncher\app_config.json`
 
 ```json
 {
-    "name_filter": "document",
-    "ext_filter": ".pdf",
-    "path_filter": "",
-    "search_dir": "C:\\Users\\YourName\\Documents",
-    "recursive": true
+  "name_filter": "",
+  "ext_filter": "",
+  "path_filter": "",
+  "search_dir": "C:\\Users\\Username",
+  "recursive": true,
+  "use_regex": false,
+  "dark_mode": false,
+  "language": "ko"
 }
 ```
 
-You can manually edit this file when the application is closed.
+### 언어 파일
 
-## Troubleshooting
+위치: `languages\lang_ko.ini`
 
-### UAC Prompts
-When running as administrator, Windows will show UAC prompt. This is normal security behavior.
+사용자 정의 번역이 가능합니다.
 
-### Permission Errors
-Some system directories require administrator privileges. The application will skip inaccessible files.
+---
 
-### Icon Not Showing
-- Verify icon files exist in `./icon/` directory
-- Supported formats: .ico, .png
-- Icon path is relative to script location
+## 성능 최적화 팁
 
-### Files Not Executing
-- Verify file associations are set in Windows
-- Try right-click → Open
-- Check if file is blocked (Properties → Unblock)
+### 검색 속도 향상
+1. 검색 범위를 구체적으로 설정
+2. 필터를 최대한 활용
+3. SSD 사용 권장
+4. 하위 디렉토리가 많은 경우 "하위 디렉토리 포함" 해제
 
-### Search Too Slow
-- Disable "Include Subdirectories" for faster search
-- Use more specific filters
-- Search in smaller directories
+### 메모리 사용 최적화
+1. 검색 완료 후 "결과 지우기"
+2. 대량 파일 선택 시 배치 작업 활용
+3. 필요한 파일만 선택
 
-## Advanced Features
+### UI 반응성
+1. 검색 중에도 UI 조작 가능
+2. "정지" 버튼으로 언제든 중단
+3. 백그라운드 스레드 사용으로 프리징 방지
 
-### Background Execution
-All file operations run in separate threads:
-- UI remains responsive during search
-- Multiple files execute sequentially
-- Progress updates in real-time
+---
 
-### Error Handling
-- Permission errors are gracefully handled
-- Failed executions show error messages
-- Invalid paths are validated
+## 알려진 제한사항
 
-### Performance
-- Efficient file scanning
-- Lazy loading of file statistics
-- Memory-efficient result storage
+1. **네트워크 속도**: 네트워크 드라이브 검색 시 느릴 수 있음
+2. **파일 권한**: 접근 권한이 없는 파일은 검색되지 않음
+3. **경로 길이**: Windows 경로 길이 제한(260자) 초과 시 문제 발생 가능
+4. **대용량 파일**: 수십만 개 파일 검색 시 시간 소요
+5. **정규표현식**: 복잡한 패턴은 성능 저하 가능
 
-## System Requirements
+---
 
-- **OS**: Windows 10/11 (primary), Linux/macOS (limited support)
-- **Python**: 3.7+
-- **RAM**: 100MB minimum
-- **Disk**: 1MB for application + space for results
+## 기여 방법
 
-## Security Notes
+### 버그 리포트
+GitHub Issues에 다음 정보와 함께 등록:
+- Windows 버전
+- ezSLauncher 버전
+- 재현 방법
+- 에러 메시지
+- 스크린샷
 
-### Administrator Execution
-- UAC prompt will appear when needed
-- Only run trusted files as administrator
-- Administrator mode is optional
+### 기능 제안
+GitHub Issues에 "Feature Request" 라벨로 등록
 
-### File Execution
-- Application uses Windows default file associations
-- No files are modified or deleted
-- Always review selected files before execution
+### 번역 기여
+`languages/lang_xx.ini` 파일 작성 후 Pull Request
 
-## Building Executable (Optional)
+### 코드 기여
+1. Fork
+2. Feature Branch 생성
+3. Commit
+4. Push
+5. Pull Request
 
-To create a standalone .exe file:
+---
 
-```bash
-pip install pyinstaller
-pyinstaller --onefile --windowed --icon=icon/icon.ico file_search_launcher.py
-```
+## 라이선스
 
-The executable will be in the `dist` folder.
+MIT License
 
-## License
+Copyright (c) 2025
 
-This application is provided as-is for educational and personal use.
+본 소프트웨어 및 관련 문서 파일(이하 "소프트웨어")의 복제본을 취득하는 모든 사람에게 무료로 제공되며, 소프트웨어를 제한 없이 거래할 수 있는 권리가 부여됩니다. 여기에는 소프트웨어의 복제본을 사용, 복사, 수정, 병합, 게시, 배포, 재라이선스 및/또는 판매할 수 있는 권리와 소프트웨어가 제공된 사람에게 그렇게 할 수 있는 권리를 포함하되 이에 국한되지 않습니다.
 
-## Support
+---
 
-For issues or questions:
-1. Check the Troubleshooting section
-2. Verify Python installation
-3. Check file permissions
-4. Review error messages in dialogs
+## 연락처
 
-## Version History
+- GitHub Issues: 버그 리포트 및 기능 제안
+- GitHub Discussions: 질문 및 토론
+- Email: test@test.com
 
-### v1.0.0
-- Initial release
-- Core search functionality
-- Context menu integration
-- Settings persistence
-- Background execution
-- UAC support
+---
 
-## Future Enhancements (Possible)
-- File preview
-- Drag and drop support
-- Export results to CSV
-- Custom execution commands
-- Search history
-- Favorites/bookmarks
-- Dark theme
-- Multi-language support
-# ezSLauncher
+## 변경 로그
+
+### v0.2.38 (2025-01-15)
+- 초기 릴리즈
+- 기본 파일 검색 기능
+- 정규표현식 지원
+- 다크 모드
+- 한국어/영어 지원
+
+### v1.0.0 (예정)
+- 자동 업데이트 기능
+- 검색 히스토리
+- 즐겨찾기 기능
+- 고급 필터 추가
+
+---

@@ -19,6 +19,14 @@ FIX_SUMMARY.md
 INSTALL_KR.md
 UI_IMPROVEMENTS_v1.2.md
 PROJECT_SUMMARY.md
+bak_README.md
+build_pyinstaller_script.bat
+build_pyinstaller_script.ps1
+clear_icon_cache.bat
+run.bat
+test_ezSLauncher.py
+test_filters.py
+version_info.txt
 
 #Django stuff:
 local_settings.py

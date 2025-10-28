@@ -327,19 +327,19 @@ class FileSearchApp:
                 "labelframe_fg": "#000000"
             },
             "dark": {
-                "bg": "#2b2b2b",              # Main background - softer dark
+                "bg": "#27282c",              # Main background - softer dark
                 "fg": "#e8e8e8",              # Main text - bright for readability
                 "select_bg": "#0078d7",       # Selection blue
                 "select_fg": "#ffffff",       # Selection text
-                "entry_bg": "#3c3c3c",        # Input fields - lighter than bg
+                "entry_bg": "#2b2d39",        # Input fields - lighter than bg
                 "entry_fg": "#e8e8e8",        # Input text
-                "button_bg": "#3c3c3c",       # Buttons
-                "frame_bg": "#2b2b2b",        # Frames
-                "tree_bg": "#3c3c3c",         # Tree background
+                "button_bg": "#2b2d39",       # Buttons
+                "frame_bg": "#2b2d39",        # Frames
+                "tree_bg": "#2b2d39",         # Tree background
                 "tree_fg": "#e8e8e8",         # Tree text
-                "status_bg": "#2b2b2b",       # Status bar
+                "status_bg": "#2b2d39",       # Status bar
                 "tip_fg": "#888888",          # Hint text
-                "labelframe_bg": "#2b2b2b",   # Label frame background
+                "labelframe_bg": "#2b2d39",   # Label frame background
                 "labelframe_fg": "#e8e8e8"    # Label frame text
             }
         }
@@ -698,6 +698,54 @@ class FileSearchApp:
         self.create_control_section(main_frame)
         self.create_results_section(main_frame)
         self.create_status_bar(main_frame)
+        
+        # Bind keyboard shortcuts
+        self.setup_keyboard_shortcuts()
+    
+    def setup_keyboard_shortcuts(self):
+        """Setup keyboard shortcuts"""
+        # F5 - Search
+        self.root.bind('<F5>', lambda e: self.start_search())
+        
+        # Ctrl+A - Select All
+        self.root.bind('<Control-a>', lambda e: self.select_all())
+        self.root.bind('<Control-A>', lambda e: self.select_all())
+        
+        # Ctrl+D - Select None
+        self.root.bind('<Control-d>', lambda e: self.select_none())
+        self.root.bind('<Control-D>', lambda e: self.select_none())
+        
+        # Delete - Delete selected file
+        self.tree.bind('<Delete>', self.on_delete_key)
+        
+        # F2 - Rename selected file
+        self.tree.bind('<F2>', self.on_rename_key)
+        
+        # Enter - Execute selected files
+        self.tree.bind('<Return>', lambda e: self.execute_selected_files())
+        
+        # Ctrl+E - Export results
+        self.root.bind('<Control-e>', lambda e: self.export_results())
+        self.root.bind('<Control-E>', lambda e: self.export_results())
+        
+        # Escape - Stop search
+        self.root.bind('<Escape>', lambda e: self.stop_search() if self.is_searching else None)
+    
+    def on_delete_key(self, event):
+        """Handle Delete key press"""
+        selection = self.tree.selection()
+        if selection:
+            item = selection[0]
+            file_path = self.tree.item(item)['values'][-1]
+            self.delete_file(file_path)
+    
+    def on_rename_key(self, event):
+        """Handle F2 key press"""
+        selection = self.tree.selection()
+        if selection:
+            item = selection[0]
+            file_path = self.tree.item(item)['values'][-1]
+            self.rename_file(file_path)
     
     def toggle_regex_tip(self):
         """Toggle regex tip visibility"""
@@ -892,9 +940,9 @@ class FileSearchApp:
         # Define row colors based on theme
         if self.dark_mode:
             # Dark mode colors - improved contrast
-            self.tree.tag_configure('oddrow', background='#3c3c3c')      # Lighter gray
-            self.tree.tag_configure('evenrow', background='#323232')     # Slightly darker
-            self.tree.tag_configure('hover', background='#4a4a4a')       # Hover highlight
+            self.tree.tag_configure('oddrow', background='#2b2d39')      # Lighter gray
+            self.tree.tag_configure('evenrow', background='#27282c')     # Slightly darker
+            self.tree.tag_configure('hover', background='#1B1C24')       # Hover highlight
             self.tree.tag_configure('checked', background='#1e3a5f', foreground='#ffffff')     # Dark blue
             self.tree.tag_configure('checked_hover', background='#2a4d7f', foreground='#ffffff')  # Lighter blue
         else:
@@ -1329,50 +1377,53 @@ class FileSearchApp:
         
         # Create context menu
         context_menu = tk.Menu(self.root, tearoff=0)
-        context_menu.add_command(label=self.t("open"), command=lambda: self.execute_file(file_path, admin=False))
-        context_menu.add_command(label=self.t("run_as_admin"), command=lambda: self.execute_file(file_path, admin=True))
+        
+        # Helper function to close menu then execute command
+        def close_then_execute(func):
+            def wrapper():
+                context_menu.unpost()
+                self.root.after(10, func)
+            return wrapper
+        
+        context_menu.add_command(label=self.t("open"), command=close_then_execute(lambda: self.execute_file(file_path, admin=False)))
+        context_menu.add_command(label=self.t("run_as_admin"), command=close_then_execute(lambda: self.execute_file(file_path, admin=True)))
         context_menu.add_separator()
-        context_menu.add_command(label=self.t("open_with"), command=lambda: self.open_with(file_path))
-        context_menu.add_command(label=self.t("open_location"), command=lambda: self.open_file_location(file_path))
+        context_menu.add_command(label=self.t("open_with"), command=close_then_execute(lambda: self.open_with(file_path)))
+        context_menu.add_command(label=self.t("open_location"), command=close_then_execute(lambda: self.open_file_location(file_path)))
         context_menu.add_separator()
         
         # Copy and Move - work with checked files if any, otherwise single file
         if has_checked:
             context_menu.add_command(
                 label=f"📋 {self.t('copy_to')} ({len(checked_files)} {self.t('files')})", 
-                command=lambda: self.copy_files_to(checked_files)
+                command=close_then_execute(lambda: self.copy_files_to(checked_files))
             )
             context_menu.add_command(
                 label=f"📦 {self.t('move_to')} ({len(checked_files)} {self.t('files')})", 
-                command=lambda: self.move_files_to(checked_files)
+                command=close_then_execute(lambda: self.move_files_to(checked_files))
             )
         else:
-            context_menu.add_command(label="📋 " + self.t("copy_to"), command=lambda: self.copy_files_to([file_path]))
-            context_menu.add_command(label="📦 " + self.t("move_to"), command=lambda: self.move_files_to([file_path]))
+            context_menu.add_command(label="📋 " + self.t("copy_to"), command=close_then_execute(lambda: self.copy_files_to([file_path])))
+            context_menu.add_command(label="📦 " + self.t("move_to"), command=close_then_execute(lambda: self.move_files_to([file_path])))
         context_menu.add_separator()
         
-        context_menu.add_command(label=self.t("rename"), command=lambda: self.rename_file(file_path))
-        context_menu.add_command(label=self.t("delete"), command=lambda: self.delete_file(file_path))
-        context_menu.add_command(label=self.t("create_shortcut"), command=lambda: self.create_shortcut(file_path))
+        context_menu.add_command(label=self.t("rename"), command=close_then_execute(lambda: self.rename_file(file_path)))
+        context_menu.add_command(label=self.t("delete"), command=close_then_execute(lambda: self.delete_file(file_path)))
+        context_menu.add_command(label=self.t("create_shortcut"), command=close_then_execute(lambda: self.create_shortcut(file_path)))
         
         # Add to startup - work with checked files if any
         if sys.platform == 'win32':
             if has_checked:
                 context_menu.add_command(
                     label=f"🚀 {self.t('add_to_startup')} ({len(checked_files)} {self.t('files')})", 
-                    command=lambda: self.add_files_to_startup(checked_files)
+                    command=close_then_execute(lambda: self.add_files_to_startup(checked_files))
                 )
             else:
-                context_menu.add_command(label="🚀 " + self.t("add_to_startup"), command=lambda: self.add_files_to_startup([file_path]))
+                context_menu.add_command(label="🚀 " + self.t("add_to_startup"), command=close_then_execute(lambda: self.add_files_to_startup([file_path])))
         
         context_menu.add_separator()
-        context_menu.add_command(label=self.t("copy_path"), command=lambda: self.copy_path(file_path))
-        context_menu.add_command(label=self.t("properties"), command=lambda: self.show_properties(file_path))
-        
-        try:
-            context_menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            context_menu.grab_release()
+        context_menu.add_command(label=self.t("copy_path"), command=close_then_execute(lambda: self.copy_path(file_path)))
+        context_menu.add_command(label=self.t("properties"), command=close_then_execute(lambda: self.show_properties(file_path)))
         
         try:
             context_menu.tk_popup(event.x_root, event.y_root)
@@ -1382,34 +1433,84 @@ class FileSearchApp:
     def execute_file(self, file_path: str, admin: bool = False):
         """Execute a file"""
         try:
+            file_ext = os.path.splitext(file_path)[1].lower()
+            
             if admin:
                 if sys.platform == 'win32':
                     import ctypes
-                    import subprocess
                     
                     file_path = os.path.abspath(file_path)
                     
-                    print(f"Attempting to run as admin: {file_path}")
+                    print(f"[DEBUG] Attempting to run as admin: {file_path}")
                     self.update_status(f"Running as admin: {os.path.basename(file_path)}")
                     
                     try:
-                        escaped_path = file_path.replace("'", "''")
-                        cmd = ['powershell', '-Command', f"Start-Process -FilePath '{escaped_path}' -Verb RunAs"]
-                        print(f"Executing command: {cmd}")
-                        subprocess.Popen(cmd)
-                        self.update_status(f"Executed as admin: {os.path.basename(file_path)}")
-                        return
-                    except Exception as e1:
-                        print(f"PowerShell method failed: {e1}")
+                        # Use ShellExecuteW for admin execution with SW_SHOWNORMAL (1)
+                        ret = ctypes.windll.shell32.ShellExecuteW(
+                            None,           # hwnd
+                            "runas",        # operation (verb)
+                            file_path,      # file
+                            None,           # parameters
+                            None,           # directory
+                            1               # show command (SW_SHOWNORMAL)
+                        )
                         
-                        try:
-                            ret = ctypes.windll.shell32.ShellExecuteW(
-                                None, "runas", file_path, None, None, 1
-                            )
-                            
-                            print(f"ShellExecuteW returned: {ret}")
-                            
-                            if ret <= 32:
+                        print(f"[DEBUG] ShellExecuteW returned: {ret}")
+                        
+                        # ShellExecuteW returns > 32 for success, <= 32 for error
+                        if ret <= 32:
+                            error_messages = {
+                                0: "Out of memory or resources",
+                                2: "File not found",
+                                3: "Path not found",
+                                5: "Access denied (User clicked No on UAC)",
+                                8: "Out of memory",
+                                26: "Sharing violation",
+                                27: "File association incomplete or invalid",
+                                28: "DDE timeout",
+                                29: "DDE transaction failed",
+                                30: "DDE busy",
+                                31: "No file association",
+                                32: "DLL not found"
+                            }
+                            error_msg = error_messages.get(ret, f"Unknown error code: {ret}")
+                            print(f"[DEBUG] Error: {error_msg}")
+                            raise Exception(f"Failed to run as admin: {error_msg}")
+                        
+                        self.update_status(f"Executed as admin: {os.path.basename(file_path)}")
+                        print(f"[DEBUG] Successfully executed as admin")
+                    except Exception as e:
+                        print(f"[DEBUG] Admin execution failed: {e}")
+                        messagebox.showerror(self.t("execution_error"), str(e))
+                        return
+                else:
+                    subprocess.Popen(['sudo', 'xdg-open', file_path])
+            else:
+                if sys.platform == 'win32':
+                    import ctypes
+                    import subprocess
+                    file_path = os.path.abspath(file_path)
+                    
+                    # Special handling for batch files and console applications
+                    if file_ext in ['.bat', '.cmd']:
+                        # Run batch files in a new console window that stays open
+                        # Use cmd /k to keep window open, or cmd /c to close after execution
+                        subprocess.Popen(['cmd', '/k', file_path], 
+                                       creationflags=subprocess.CREATE_NEW_CONSOLE)
+                        print(f"Executed batch file: {file_path}")
+                    elif file_ext in ['.exe', '.com']:
+                        # Check if it's a console application
+                        # For .exe files, use ShellExecuteW which handles both GUI and console apps
+                        ret = ctypes.windll.shell32.ShellExecuteW(
+                            None, "open", file_path, None, None, 1
+                        )
+                        
+                        if ret <= 32:
+                            # Fallback to subprocess for console apps
+                            try:
+                                subprocess.Popen([file_path], 
+                                               creationflags=subprocess.CREATE_NEW_CONSOLE)
+                            except Exception as e2:
                                 error_messages = {
                                     0: "Out of memory or resources",
                                     2: "File not found",
@@ -1425,15 +1526,34 @@ class FileSearchApp:
                                     32: "DLL not found"
                                 }
                                 error_msg = error_messages.get(ret, f"Unknown error code: {ret}")
-                                raise Exception(f"ShellExecuteW failed: {error_msg}")
-                        except Exception as e2:
-                            print(f"ShellExecuteW failed: {e2}")
-                            raise Exception(f"Both methods failed. PowerShell: {e1}, ShellExecuteW: {e2}")
-                else:
-                    subprocess.Popen(['sudo', 'xdg-open', file_path])
-            else:
-                if sys.platform == 'win32':
-                    os.startfile(file_path)
+                                raise Exception(f"Failed to execute: {error_msg}\nFallback also failed: {e2}")
+                    else:
+                        # For other file types, use ShellExecuteW
+                        ret = ctypes.windll.shell32.ShellExecuteW(
+                            None, "open", file_path, None, None, 1
+                        )
+                        
+                        if ret <= 32:
+                            # If ShellExecuteW fails, try os.startfile as fallback
+                            try:
+                                os.startfile(file_path)
+                            except Exception as e2:
+                                error_messages = {
+                                    0: "Out of memory or resources",
+                                    2: "File not found",
+                                    3: "Path not found",
+                                    5: "Access denied",
+                                    8: "Out of memory",
+                                    26: "Sharing violation",
+                                    27: "File association incomplete or invalid",
+                                    28: "DDE timeout",
+                                    29: "DDE transaction failed",
+                                    30: "DDE busy",
+                                    31: "No file association",
+                                    32: "DLL not found"
+                                }
+                                error_msg = error_messages.get(ret, f"Unknown error code: {ret}")
+                                raise Exception(f"Failed to execute: {error_msg}\nFallback also failed: {e2}")
                 else:
                     subprocess.Popen(['xdg-open', file_path])
             
@@ -1448,13 +1568,101 @@ class FileSearchApp:
         """Open file with dialog"""
         try:
             if sys.platform == 'win32':
-                # Use proper path format for rundll32
+                import ctypes
+                import time
+                
+                # Ensure absolute path
                 file_path = os.path.abspath(file_path)
-                subprocess.Popen(['rundll32.exe', 'shell32.dll,OpenAs_RunDLL', file_path], shell=False)
-                self.update_status(f"Opening 'Open With' dialog for: {os.path.basename(file_path)}")
+                
+                # Verify file exists
+                if not os.path.exists(file_path):
+                    messagebox.showerror(self.t("error"), f"File not found:\n{file_path}")
+                    return
+                
+                # Method 1: Use rundll32 with process detachment (most reliable)
+                try:
+                    # Create a detached process that won't be terminated when parent exits
+                    # DETACHED_PROCESS = 0x00000008
+                    # CREATE_NEW_PROCESS_GROUP = 0x00000200
+                    DETACHED_PROCESS = 0x00000008
+                    CREATE_NEW_PROCESS_GROUP = 0x00000200
+                    
+                    # Use both flags for maximum stability
+                    creation_flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+                    
+                    # Start the process
+                    process = subprocess.Popen(
+                        ['rundll32.exe', 'shell32.dll,OpenAs_RunDLL', file_path],
+                        creationflags=creation_flags,
+                        shell=False,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    
+                    # Don't wait for the process - let it run independently
+                    self.update_status(f"Opening 'Open With' dialog for: {os.path.basename(file_path)}")
+                    return
+                    
+                except Exception as e1:
+                    print(f"Method 1 (rundll32 detached) failed: {e1}")
+                
+                # Method 2: Use Windows API with proper verb
+                try:
+                    # Try "open" verb which sometimes shows the Open With dialog
+                    # for files without association
+                    ret = ctypes.windll.shell32.ShellExecuteW(
+                        None,
+                        None,           # Let Windows decide
+                        file_path,
+                        None,
+                        None,
+                        1
+                    )
+                    
+                    if ret > 32:
+                        self.update_status(f"Opening file: {os.path.basename(file_path)}")
+                        return
+                    
+                    print(f"ShellExecuteW failed with code: {ret}")
+                    
+                except Exception as e2:
+                    print(f"Method 2 (ShellExecuteW) failed: {e2}")
+                
+                # Method 3: Use explorer.exe to open Open With dialog
+                try:
+                    # This is a more modern approach
+                    # Use explorer.exe with the file path
+                    process = subprocess.Popen(
+                        ['cmd', '/c', 'start', '', '/wait', 'rundll32.exe', 
+                         'shell32.dll,OpenAs_RunDLL', file_path],
+                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
+                        shell=False,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    
+                    self.update_status(f"Opening 'Open With' dialog for: {os.path.basename(file_path)}")
+                    return
+                    
+                except Exception as e3:
+                    print(f"Method 3 (cmd start) failed: {e3}")
+                
+                # If all methods fail, show error
+                messagebox.showerror(
+                    self.t("error"), 
+                    f"Failed to open 'Open With' dialog.\n\n"
+                    f"File: {file_path}\n\n"
+                    f"Try right-clicking the file in Windows Explorer instead."
+                )
+                    
             else:
                 messagebox.showinfo(self.t("error"), self.t("open_with_not_supported"))
+                
         except Exception as e:
+            import traceback
+            print(traceback.format_exc())
             messagebox.showerror(self.t("error"), f"Failed to open with:\n{str(e)}")
     
     def open_file_location(self, file_path: str):
@@ -1471,74 +1679,77 @@ class FileSearchApp:
             messagebox.showerror(self.t("error"), f"Failed to open location:\n{str(e)}")
     
     def rename_file(self, file_path: str):
-        """Rename file with custom dialog"""
+        """Rename file"""
         try:
             old_name = os.path.basename(file_path)
             
-            # Create custom dialog window
-            rename_dialog = tk.Toplevel(self.root)
-            rename_dialog.title(self.t("rename_title"))
-            rename_dialog.geometry("450x150")
-            rename_dialog.resizable(False, False)
-            rename_dialog.transient(self.root)
-            rename_dialog.grab_set()
-            self.set_window_icon(rename_dialog)
+            # Create custom dialog
+            dialog = tk.Toplevel(self.root)
+            dialog.title(self.t("rename_title"))
+            dialog.transient(self.root)
+            dialog.grab_set()
             
-            # Center the dialog
-            rename_dialog.update_idletasks()
-            x = (rename_dialog.winfo_screenwidth() // 2) - (450 // 2)
-            y = (rename_dialog.winfo_screenheight() // 2) - (150 // 2)
-            rename_dialog.geometry(f"450x150+{x}+{y}")
+            # Set size and position
+            dialog_width = 500
+            dialog_height = 150
+            x = (dialog.winfo_screenwidth() // 2) - (dialog_width // 2)
+            y = (dialog.winfo_screenheight() // 2) - (dialog_height // 2)
+            dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+            dialog.resizable(False, False)
             
-            # Main frame
-            main_frame = ttk.Frame(rename_dialog, padding="20")
-            main_frame.pack(fill=tk.BOTH, expand=True)
+            # Apply icon
+            self.set_window_icon(dialog)
             
-            # Icon and label frame
-            top_frame = ttk.Frame(main_frame)
-            top_frame.pack(fill=tk.X, pady=(0, 15))
+            # Create frame
+            frame = ttk.Frame(dialog, padding="20")
+            frame.pack(fill=tk.BOTH, expand=True)
             
-            # Label with icon
-            label_text = self.t("new_name")
-            ttk.Label(top_frame, text="📝 " + label_text, font=('', 10)).pack(anchor=tk.W)
+            # Label
+            label = ttk.Label(frame, text=self.t("new_name"), font=('', 11))
+            label.pack(anchor=tk.W, pady=(0, 10))
             
-            # Entry field
-            entry_var = tk.StringVar(value=old_name)
-            entry = ttk.Entry(top_frame, textvariable=entry_var, font=('', 10))
-            entry.pack(fill=tk.X, pady=(5, 0))
-            entry.focus()
+            # Entry
+            entry = ttk.Entry(frame, font=('', 11), width=50)
+            entry.insert(0, old_name)
+            entry.pack(fill=tk.X, pady=(0, 20))
+            entry.focus_set()
             entry.select_range(0, tk.END)
             
             # Result variable
-            result = {'value': None}
+            result = {'name': None}
             
-            def on_ok():
-                result['value'] = entry_var.get()
-                rename_dialog.destroy()
+            def on_ok(event=None):
+                result['name'] = entry.get()
+                dialog.destroy()
             
-            def on_cancel():
-                result['value'] = None
-                rename_dialog.destroy()
+            def on_cancel(event=None):
+                dialog.destroy()
             
             # Button frame
-            button_frame = ttk.Frame(main_frame)
-            button_frame.pack(fill=tk.X, pady=(10, 0))
+            btn_frame = ttk.Frame(frame)
+            btn_frame.pack(fill=tk.X)
             
-            ok_btn = ttk.Button(button_frame, text="OK", command=on_ok, width=10)
+            ok_btn = ttk.Button(btn_frame, text="OK", command=on_ok, width=12)
             ok_btn.pack(side=tk.RIGHT, padx=(5, 0))
             
-            cancel_btn = ttk.Button(button_frame, text=self.t("close"), command=on_cancel, width=10)
+            cancel_btn = ttk.Button(btn_frame, text=self.t("close"), command=on_cancel, width=12)
             cancel_btn.pack(side=tk.RIGHT)
             
-            # Bind Enter and Escape keys
-            entry.bind('<Return>', lambda e: on_ok())
-            entry.bind('<Escape>', lambda e: on_cancel())
+            # Bind keys
+            entry.bind('<Return>', on_ok)
+            entry.bind('<Escape>', on_cancel)
+            dialog.bind('<Return>', on_ok)
+            dialog.bind('<Escape>', on_cancel)
             
-            # Wait for dialog to close
-            self.root.wait_window(rename_dialog)
+            # Focus on top
+            dialog.lift()
+            dialog.focus_force()
             
-            new_name = result['value']
+            # Wait for dialog
+            self.root.wait_window(dialog)
             
+            # Process result
+            new_name = result['name']
             if new_name and new_name != old_name:
                 directory = os.path.dirname(file_path)
                 new_path = os.path.join(directory, new_name)
@@ -1550,8 +1761,17 @@ class FileSearchApp:
                 os.rename(file_path, new_path)
                 self.update_status(self.t("rename_success").format(new_name))
                 
-                # Refresh search
-                self.start_search()
+                # Update tree item
+                for item in self.tree.get_children():
+                    if self.tree.item(item)['values'][-1] == file_path:
+                        is_checked = self.checked_items.get(item, False)
+                        checkbox = self.check_images['checked'] if is_checked else self.check_images['unchecked']
+                        new_text = f"{checkbox} {new_name}"
+                        self.tree.item(item, text=new_text)
+                        values = list(self.tree.item(item)['values'])
+                        values[-1] = new_path
+                        self.tree.item(item, values=values)
+                        break
         except Exception as e:
             messagebox.showerror(self.t("rename_failed"), str(e))
     
@@ -1566,8 +1786,12 @@ class FileSearchApp:
                 
                 self.update_status(self.t("delete_success").format(os.path.basename(file_path)))
                 
-                # Refresh search
-                self.start_search()
+                # Remove from tree instead of full search
+                for item in self.tree.get_children():
+                    if self.tree.item(item)['values'][-1] == file_path:
+                        self.tree.delete(item)
+                        self.update_results_label()
+                        break
         except Exception as e:
             messagebox.showerror(self.t("delete_failed"), str(e))
     
@@ -1879,6 +2103,11 @@ class FileSearchApp:
         self.checked_items.clear()
         self.results_label.config(text=self.t("results") + " 0")
         self.update_status(self.t("results_cleared"))
+    
+    def update_results_label(self):
+        """Update results count label"""
+        count = len(self.tree.get_children())
+        self.results_label.config(text=self.t("results") + f" {count}")
     
     def export_results(self):
         """Export search results to CSV"""
