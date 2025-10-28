@@ -13,11 +13,36 @@ import configparser
 import shutil
 from pathlib import Path
 from datetime import datetime
+
+# Fix UTF-8 encoding for Windows console
+if sys.platform == 'win32':
+    try:
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except:
+        pass
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from typing import List, Dict, Any
 
-CONFIG_FILE = "app_config.json"
+def get_config_dir():
+    """Get application config directory in %APPDATA%"""
+    if sys.platform == 'win32':
+        appdata = os.environ.get('APPDATA')
+        if appdata:
+            config_dir = os.path.join(appdata, 'ezSLauncher')
+        else:
+            config_dir = os.path.expanduser('~/.ezSLauncher')
+    else:
+        config_dir = os.path.expanduser('~/.ezSLauncher')
+    
+    # Create directory if it doesn't exist
+    os.makedirs(config_dir, exist_ok=True)
+    return config_dir
+
+CONFIG_DIR = get_config_dir()
+CONFIG_FILE = os.path.join(CONFIG_DIR, "app_config.json")
 LANG_DIR = "languages"
 
 def resource_path(relative_path):
@@ -228,12 +253,24 @@ class FileSearchApp:
         self.config = self.load_config()
         
         # Language setting - default English
-        self.current_language = self.config.get("language", "English")
+        saved_lang = self.config.get("language", "English")
+        
+        # Map old saved language to code
+        if saved_lang == "English" or saved_lang == "en":
+            self.current_language = "English"
+            self.current_language_code = "en"
+        elif saved_lang == "한국어" or saved_lang == "Korean" or saved_lang == "ko":
+            self.current_language = "한국어"
+            self.current_language_code = "ko"
+        else:
+            self.current_language = "English"
+            self.current_language_code = "en"
+        
         self.translations = self.DEFAULT_TRANSLATIONS.copy()
         
         # Load language file if not English
-        if self.current_language != "English":
-            self.load_language_file(self.current_language)
+        if self.current_language_code != "en":
+            self.load_language_file_by_code(self.current_language_code)
         
         # Set title with correct language
         self.root.title(self.t("title"))
@@ -270,20 +307,20 @@ class FileSearchApp:
                 "labelframe_fg": "#000000"
             },
             "dark": {
-                "bg": "#1e1e1e",
-                "fg": "#e0e0e0",
-                "select_bg": "#0078d7",
-                "select_fg": "#ffffff",
-                "entry_bg": "#2d2d2d",
-                "entry_fg": "#e0e0e0",
-                "button_bg": "#3d3d3d",
-                "frame_bg": "#252525",
-                "tree_bg": "#2d2d2d",
-                "tree_fg": "#e0e0e0",
-                "status_bg": "#252525",
-                "tip_fg": "#808080",
-                "labelframe_bg": "#252525",
-                "labelframe_fg": "#e0e0e0"
+                "bg": "#2b2b2b",              # Main background - softer dark
+                "fg": "#e8e8e8",              # Main text - bright for readability
+                "select_bg": "#0078d7",       # Selection blue
+                "select_fg": "#ffffff",       # Selection text
+                "entry_bg": "#3c3c3c",        # Input fields - lighter than bg
+                "entry_fg": "#e8e8e8",        # Input text
+                "button_bg": "#3c3c3c",       # Buttons
+                "frame_bg": "#2b2b2b",        # Frames
+                "tree_bg": "#3c3c3c",         # Tree background
+                "tree_fg": "#e8e8e8",         # Tree text
+                "status_bg": "#2b2b2b",       # Status bar
+                "tip_fg": "#888888",          # Hint text
+                "labelframe_bg": "#2b2b2b",   # Label frame background
+                "labelframe_fg": "#e8e8e8"    # Label frame text
             }
         }
         
@@ -294,23 +331,34 @@ class FileSearchApp:
         self.load_settings()
         
         # Apply initial theme
-        if self.dark_mode:
-            self.toggle_dark_mode()
+        self.apply_theme()
     
     def load_language_file(self, lang_name: str):
-        """Load translations from INI file"""
-        lang_file = f"lang_{lang_name.lower()[:2]}.ini"
+        """Load translations from INI file (legacy method)"""
+        # Convert display name to code
+        lang_code = lang_name.lower()[:2]
+        return self.load_language_file_by_code(lang_code)
+    
+    def load_language_file_by_code(self, lang_code: str):
+        """Load translations from INI file by language code"""
+        lang_file = f"lang_{lang_code}.ini"
         
-        if os.path.exists(lang_file):
+        # Try to load from resource path (for PyInstaller)
+        lang_path = resource_path(lang_file)
+        
+        if os.path.exists(lang_path):
             try:
                 config = configparser.ConfigParser()
-                config.read(lang_file, encoding='utf-8')
+                config.read(lang_path, encoding='utf-8')
                 
                 if 'UI' in config:
                     for key in config['UI']:
                         self.translations[key] = config['UI'][key]
+                return True
             except Exception as e:
-                print(f"Failed to load language file: {e}")
+                return False
+        else:
+            return False
     
     def t(self, key: str) -> str:
         """Get translation for key"""
@@ -352,22 +400,39 @@ class FileSearchApp:
         # View menu
         view_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label=self.t("menu_view"), menu=view_menu)
-        view_menu.add_checkbutton(label=self.t("menu_dark_mode"), command=self.toggle_dark_mode, 
-                                  variable=tk.BooleanVar(value=self.dark_mode))
+        
+        # Create BooleanVar for dark mode and keep reference
+        self.dark_mode_var = tk.BooleanVar(value=self.dark_mode)
+        view_menu.add_checkbutton(
+            label=self.t("menu_dark_mode"), 
+            command=self.toggle_dark_mode,
+            variable=self.dark_mode_var
+        )
         
         # Language menu
         lang_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label=self.t("menu_language"), menu=lang_menu)
         
-        # Available languages
-        available_langs = ["English"]
+        # Language display name to code mapping
+        self.language_map = {
+            "English": "en",
+            "한국어": "ko",
+            "Korean": "ko"
+        }
+        
+        # Available languages (display name -> code)
+        available_langs = [("English", "en")]
         
         # Check for Korean language file
-        if os.path.exists("lang_ko.ini"):
-            available_langs.append("한국어")
+        lang_ko_path = resource_path("lang_ko.ini")
+        if os.path.exists(lang_ko_path):
+            available_langs.append(("한국어", "ko"))
         
-        for lang in available_langs:
-            lang_menu.add_command(label=lang, command=lambda l=lang: self.change_language(l))
+        for lang_display, lang_code in available_langs:
+            lang_menu.add_command(
+                label=lang_display, 
+                command=lambda ld=lang_display, lc=lang_code: self.change_language(lc, ld)
+            )
         
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -379,6 +444,11 @@ class FileSearchApp:
     def toggle_dark_mode(self):
         """Toggle between light and dark mode"""
         self.dark_mode = not self.dark_mode
+        
+        # Update the menu checkbutton variable
+        if hasattr(self, 'dark_mode_var'):
+            self.dark_mode_var.set(self.dark_mode)
+        
         self.apply_theme()
         self.update_status(self.t("dark_mode_enabled") if self.dark_mode else self.t("dark_mode_disabled"))
         self.save_settings()
@@ -387,14 +457,80 @@ class FileSearchApp:
         """Apply current theme to all widgets"""
         theme = self.themes["dark" if self.dark_mode else "light"]
         
-        # Configure ttk styles
+        # Configure ttk styles globally
         style = ttk.Style()
+        
+        # Set global ttk theme
+        style.theme_use('default')
+        
+        # Configure all ttk widget styles
+        style.configure(".", 
+                       background=theme["bg"],
+                       foreground=theme["fg"],
+                       fieldbackground=theme["entry_bg"],
+                       troughcolor=theme["bg"],
+                       bordercolor=theme["bg"],
+                       darkcolor=theme["bg"],
+                       lightcolor=theme["bg"],
+                       selectbackground=theme["select_bg"],
+                       selectforeground=theme["select_fg"])
+        
+        # TFrame
+        style.configure("TFrame", background=theme["bg"])
+        
+        # TLabel
+        style.configure("TLabel", background=theme["bg"], foreground=theme["fg"])
+        
+        # TButton
+        style.configure("TButton", background=theme["button_bg"], foreground=theme["fg"])
+        style.map("TButton",
+                 background=[('active', theme["select_bg"])],
+                 foreground=[('active', theme["select_fg"])])
+        
+        # TEntry
+        style.configure("TEntry",
+                       fieldbackground=theme["entry_bg"],
+                       foreground=theme["entry_fg"],
+                       insertcolor=theme["fg"])
+        
+        # TCheckbutton
+        style.configure("TCheckbutton", background=theme["bg"], foreground=theme["fg"])
+        
+        # TLabelframe
+        style.configure("TLabelframe", 
+                       background=theme["labelframe_bg"],
+                       foreground=theme["labelframe_fg"])
+        style.configure("TLabelframe.Label",
+                       background=theme["labelframe_bg"],
+                       foreground=theme["labelframe_fg"])
+        
+        # Increase Treeview row height by 50%
+        style.configure("Treeview", rowheight=30)
         
         # Apply to root window
         self.root.configure(bg=theme["bg"])
         
         # Apply to all widgets recursively
         self.apply_theme_recursive(self.root, theme)
+        
+        # Update treeview styling (zebra striping and hover colors)
+        if hasattr(self, 'tree'):
+            self.setup_treeview_styling()
+            # Refresh all items to apply new colors
+            for item in self.tree.get_children():
+                self.update_item_tags(item, hover=False)
+        
+        # Update checkbox images for new theme
+        if hasattr(self, 'check_images'):
+            self.create_check_images()
+            # Update all checkbox icons in tree
+            if hasattr(self, 'tree') and hasattr(self, 'checked_items'):
+                for item_id in self.tree.get_children():
+                    current_text = self.tree.item(item_id, "text")
+                    is_checked = self.checked_items.get(item_id, False)
+                    icon = self.check_images['checked'] if is_checked else self.check_images['unchecked']
+                    new_text = icon + current_text[1:]
+                    self.tree.item(item_id, text=new_text)
     
     def apply_theme_recursive(self, widget, theme):
         """Recursively apply theme to all child widgets"""
@@ -407,10 +543,15 @@ class FileSearchApp:
             
             # Frames and LabelFrames
             elif widget_class in ["Frame", "TFrame"]:
-                try:
-                    widget.configure(bg=theme["bg"])
-                except:
-                    pass
+                if widget_class == "Frame":
+                    try:
+                        widget.configure(bg=theme["bg"])
+                    except:
+                        pass
+                else:
+                    # TFrame - use ttk style
+                    style = ttk.Style()
+                    style.configure("TFrame", background=theme["bg"])
             
             # LabelFrame styling
             elif widget_class == "TLabelframe":
@@ -461,9 +602,24 @@ class FileSearchApp:
             # Entries
             elif widget_class in ["Entry", "TEntry"]:
                 try:
-                    widget.configure(bg=theme["entry_bg"], fg=theme["entry_fg"], 
-                                   insertbackground=theme["fg"], disabledbackground=theme["entry_bg"],
-                                   disabledforeground=theme["tip_fg"])
+                    if widget_class == "Entry":
+                        # tk.Entry widget
+                        widget.configure(
+                            bg=theme["entry_bg"], 
+                            fg=theme["entry_fg"], 
+                            insertbackground=theme["fg"],
+                            disabledbackground=theme["entry_bg"],
+                            disabledforeground=theme["tip_fg"],
+                            selectbackground=theme["select_bg"],
+                            selectforeground=theme["select_fg"]
+                        )
+                    else:
+                        # ttk.Entry widget
+                        style = ttk.Style()
+                        style.configure("TEntry",
+                                      fieldbackground=theme["entry_bg"],
+                                      foreground=theme["entry_fg"],
+                                      insertcolor=theme["fg"])
                 except:
                     pass
             
@@ -564,8 +720,8 @@ class FileSearchApp:
         self.search_dir = ttk.Entry(filter_frame, width=60)
         self.search_dir.grid(row=3, column=1, columnspan=4, sticky=(tk.W, tk.E), pady=(10, 0), padx=(0, 5))
         
-        browse_btn = ttk.Button(filter_frame, text=self.t("browse"), command=self.browse_directory)
-        browse_btn.grid(row=3, column=5, pady=(10, 0), sticky=tk.W)
+        self.browse_btn = ttk.Button(filter_frame, text=self.t("browse"), command=self.browse_directory)
+        self.browse_btn.grid(row=3, column=5, pady=(10, 0), sticky=tk.W)
         
         # Options
         options_frame = ttk.Frame(filter_frame)
@@ -599,27 +755,36 @@ class FileSearchApp:
         self.stop_btn.grid_remove()
         
         # Execute selected button
-        execute_btn = ttk.Button(control_frame, text=self.t("execute_selected"), command=self.execute_selected, width=18)
-        execute_btn.grid(row=0, column=2, padx=(0, 10))
+        self.execute_btn = ttk.Button(control_frame, text=self.t("execute_selected"), command=self.execute_selected, width=18)
+        self.execute_btn.grid(row=0, column=2, padx=(0, 10))
         
         # Clear results button
-        clear_btn = ttk.Button(control_frame, text=self.t("clear_results"), command=self.clear_results, width=15)
-        clear_btn.grid(row=0, column=3, padx=(0, 10))
+        self.clear_btn = ttk.Button(control_frame, text=self.t("clear_results"), command=self.clear_results, width=15)
+        self.clear_btn.grid(row=0, column=3, padx=(0, 10))
         
         # Export results button
-        export_btn = ttk.Button(control_frame, text=self.t("export_results"), command=self.export_results, width=15)
-        export_btn.grid(row=0, column=7, padx=(20, 0))
+        self.export_btn = ttk.Button(control_frame, text=self.t("export_results"), command=self.export_results, width=15)
+        self.export_btn.grid(row=0, column=7, padx=(20, 0))
         
         # Select all/none
-        select_all_btn = ttk.Button(control_frame, text=self.t("select_all"), command=self.select_all, width=12)
-        select_all_btn.grid(row=0, column=4, padx=(0, 5))
+        self.select_all_btn = ttk.Button(control_frame, text=self.t("select_all"), command=self.select_all, width=12)
+        self.select_all_btn.grid(row=0, column=4, padx=(0, 5))
         
-        select_none_btn = ttk.Button(control_frame, text=self.t("select_none"), command=self.select_none, width=12)
-        select_none_btn.grid(row=0, column=5)
+        self.select_none_btn = ttk.Button(control_frame, text=self.t("select_none"), command=self.select_none, width=12)
+        self.select_none_btn.grid(row=0, column=5)
         
         # Results count label
         self.results_label = ttk.Label(control_frame, text=self.t("results") + " 0")
         self.results_label.grid(row=0, column=6, padx=(20, 0))
+        
+        # Store buttons for enabling/disabling during search
+        self.control_buttons = [
+            self.execute_btn,
+            self.clear_btn,
+            self.export_btn,
+            self.select_all_btn,
+            self.select_none_btn
+        ]
     
     def create_results_section(self, parent):
         """Create results display section with treeview"""
@@ -666,11 +831,19 @@ class FileSearchApp:
         self.tree.column("size", width=100, stretch=False)
         self.tree.column("path", width=500, stretch=True, minwidth=500)
         
+        # Configure zebra striping (alternating row colors)
+        self.setup_treeview_styling()
+        
         # Bind events
         self.tree.bind("<Double-Button-1>", self.on_double_click)
         self.tree.bind("<Button-1>", self.on_single_click)
         self.tree.bind("<Button-3>", self.show_context_menu)
         self.tree.bind("<space>", self.toggle_check)
+        
+        # Bind hover events
+        self.tree.bind("<Motion>", self.on_tree_hover)
+        self.tree.bind("<Leave>", self.on_tree_leave)
+        self.last_hover_item = None
         
         # Add sorting
         self.tree.heading("#0", text=self.t("name").rstrip(':'), command=lambda: self.sort_column("#0", False))
@@ -681,8 +854,76 @@ class FileSearchApp:
         
         self.sort_reverse = {}
         
-        # Create checkbox images
+        # Create checkbox images (toggle style)
         self.create_check_images()
+    
+    def setup_treeview_styling(self):
+        """Setup zebra striping and hover effects for treeview"""
+        # Define row colors based on theme
+        if self.dark_mode:
+            # Dark mode colors - improved contrast
+            self.tree.tag_configure('oddrow', background='#3c3c3c')      # Lighter gray
+            self.tree.tag_configure('evenrow', background='#323232')     # Slightly darker
+            self.tree.tag_configure('hover', background='#4a4a4a')       # Hover highlight
+            self.tree.tag_configure('checked', background='#1e3a5f', foreground='#ffffff')     # Dark blue
+            self.tree.tag_configure('checked_hover', background='#2a4d7f', foreground='#ffffff')  # Lighter blue
+        else:
+            # Light mode colors
+            self.tree.tag_configure('oddrow', background='#ffffff')
+            self.tree.tag_configure('evenrow', background='#f3f4f6')
+            self.tree.tag_configure('hover', background='#e5e7eb')
+            self.tree.tag_configure('checked', background='#dbeafe', foreground='#1e40af')
+            self.tree.tag_configure('checked_hover', background='#bfdbfe', foreground='#1e3a8a')
+    
+    def on_tree_hover(self, event):
+        """Handle mouse hover over tree items"""
+        item = self.tree.identify_row(event.y)
+        
+        if item != self.last_hover_item:
+            # Remove hover from previous item
+            if self.last_hover_item:
+                self.update_item_tags(self.last_hover_item, hover=False)
+            
+            # Add hover to current item
+            if item:
+                self.update_item_tags(item, hover=True)
+            
+            self.last_hover_item = item
+    
+    def on_tree_leave(self, event):
+        """Handle mouse leaving tree widget"""
+        if self.last_hover_item:
+            self.update_item_tags(self.last_hover_item, hover=False)
+            self.last_hover_item = None
+    
+    def update_item_tags(self, item, hover=False):
+        """Update tags for an item based on its state"""
+        if not item:
+            return
+        
+        # Get item index for zebra striping
+        all_items = self.tree.get_children()
+        try:
+            index = all_items.index(item)
+        except ValueError:
+            index = 0
+        
+        is_even = index % 2 == 0
+        is_checked = self.checked_items.get(item, False)
+        
+        # Determine appropriate tag
+        if is_checked and hover:
+            tags = ('checked_hover',)
+        elif is_checked:
+            tags = ('checked',)
+        elif hover:
+            tags = ('hover',)
+        elif is_even:
+            tags = ('evenrow',)
+        else:
+            tags = ('oddrow',)
+        
+        self.tree.item(item, tags=tags)
     
     def sort_column(self, col, reverse):
         """Sort treeview by column"""
@@ -711,8 +952,11 @@ class FileSearchApp:
         
         items.sort(reverse=reverse)
         
+        # Move items and reapply zebra striping
         for index, (val, item) in enumerate(items):
             self.tree.move(item, "", index)
+            # Reapply zebra striping after sort
+            self.update_item_tags(item, hover=False)
         
         new_reverse = not reverse
         self.tree.heading(col, command=lambda: self.sort_column(col, new_reverse))
@@ -723,11 +967,18 @@ class FileSearchApp:
         self.tree.heading(col, text=base_text + arrow)
     
     def create_check_images(self):
-        """Create checkbox images"""
-        self.check_images = {
-            'checked': '☑',
-            'unchecked': '☐'
-        }
+        """Create toggle-style checkbox images"""
+        # Toggle switch style icons (more modern)
+        if self.dark_mode:
+            self.check_images = {
+                'checked': '🟦',    # Blue square for checked
+                'unchecked': '⬜'   # White square for unchecked
+            }
+        else:
+            self.check_images = {
+                'checked': '🟦',    # Blue square for checked
+                'unchecked': '⬜'   # White square for unchecked
+            }
     
     def create_status_bar(self, parent):
         """Create status bar"""
@@ -737,11 +988,6 @@ class FileSearchApp:
         self.status_label = ttk.Label(status_frame, text=self.t("ready"), relief=tk.SUNKEN, anchor=tk.W)
         self.status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        github_label = ttk.Label(status_frame, text="gloriouslegacy", foreground="blue", cursor="hand2", 
-                                relief=tk.SUNKEN, padding=(5, 2))
-        github_label.pack(side=tk.RIGHT, padx=(5, 0))
-        github_label.bind("<Button-1>", lambda e: self.open_github())
-        
         self.progress = ttk.Progressbar(status_frame, mode='indeterminate', length=200)
     
     def browse_directory(self):
@@ -750,6 +996,30 @@ class FileSearchApp:
         if directory:
             self.search_dir.delete(0, tk.END)
             self.search_dir.insert(0, directory)
+    
+    def disable_controls(self):
+        """Disable all controls during search"""
+        for button in self.control_buttons:
+            button.config(state='disabled')
+        
+        # Disable filter inputs
+        self.name_filter.config(state='disabled')
+        self.ext_filter.config(state='disabled')
+        self.path_filter.config(state='disabled')
+        self.search_dir.config(state='disabled')
+        self.browse_btn.config(state='disabled')
+    
+    def enable_controls(self):
+        """Enable all controls after search"""
+        for button in self.control_buttons:
+            button.config(state='normal')
+        
+        # Enable filter inputs
+        self.name_filter.config(state='normal')
+        self.ext_filter.config(state='normal')
+        self.path_filter.config(state='normal')
+        self.search_dir.config(state='normal')
+        self.browse_btn.config(state='normal')
     
     def start_search(self):
         """Start file search in background thread"""
@@ -765,7 +1035,10 @@ class FileSearchApp:
         # Clear previous results
         self.clear_results()
         
-        # Show stop button
+        # Disable controls during search
+        self.disable_controls()
+        
+        # Show stop button, hide search button
         self.search_btn.grid_remove()
         self.stop_btn.grid()
         
@@ -794,6 +1067,10 @@ class FileSearchApp:
         try:
             self.root.after(0, self.update_status, self.t("searching"))
             
+            file_count = 0
+            batch = []
+            batch_size = 50  # Add results in batches to reduce UI updates
+            
             for root, dirs, files in os.walk(directory):
                 if self.search_cancelled:
                     break
@@ -808,12 +1085,27 @@ class FileSearchApp:
                         
                         if search_filter.matches(file_item):
                             self.search_results.append(file_item)
-                            self.root.after(0, self.add_result_to_tree, file_item)
+                            batch.append(file_item)
+                            file_count += 1
+                            
+                            # Add results in batches for better performance
+                            if len(batch) >= batch_size:
+                                # Schedule batch update
+                                items_to_add = batch.copy()
+                                self.root.after(0, self.add_results_batch, items_to_add)
+                                batch.clear()
+                                
+                                # Update count
+                                self.root.after(0, self.results_label.config, {"text": self.t("results") + f" {file_count}"})
                     except Exception as e:
                         pass
                 
                 if not self.recursive_var.get():
                     break
+            
+            # Add remaining items
+            if batch:
+                self.root.after(0, self.add_results_batch, batch)
             
             count = len(self.search_results)
             self.root.after(0, self.results_label.config, {"text": self.t("results") + f" {count}"})
@@ -825,10 +1117,22 @@ class FileSearchApp:
             self.is_searching = False
             self.root.after(0, self.stop_btn.grid_remove)
             self.root.after(0, self.search_btn.grid)
+            self.root.after(0, self.enable_controls)
+    
+    def add_results_batch(self, items):
+        """Add multiple results to tree at once"""
+        for file_item in items:
+            self.add_result_to_tree(file_item)
     
     def add_result_to_tree(self, file_item: FileItem):
-        """Add search result to tree"""
+        """Add search result to tree with zebra striping"""
         checkbox = self.check_images['unchecked']
+        
+        # Get current number of items for zebra striping
+        current_count = len(self.tree.get_children())
+        is_even = current_count % 2 == 0
+        row_tag = 'evenrow' if is_even else 'oddrow'
+        
         item_id = self.tree.insert("", "end", 
                                    text=f"{checkbox} {file_item.name}",
                                    values=(
@@ -836,7 +1140,8 @@ class FileSearchApp:
                                        file_item.modified.strftime("%Y-%m-%d %H:%M:%S"),
                                        file_item.get_size_str(),
                                        file_item.path
-                                   ))
+                                   ),
+                                   tags=(row_tag,))
         self.checked_items[item_id] = False
     
     def on_double_click(self, event):
@@ -853,7 +1158,8 @@ class FileSearchApp:
             item_id = self.tree.identify_row(event.y)
             if item_id:
                 x_offset = event.x - self.tree.bbox(item_id)[0]
-                if x_offset < 20:
+                # Increase clickable area for emoji checkboxes (emojis are wider)
+                if x_offset < 50:
                     self.toggle_check_item(item_id)
     
     def toggle_check(self, event):
@@ -863,18 +1169,30 @@ class FileSearchApp:
             self.toggle_check_item(selection[0])
     
     def toggle_check_item(self, item_id):
-        """Toggle checkbox state"""
+        """Toggle checkbox state with visual feedback"""
         current_state = self.checked_items.get(item_id, False)
         new_state = not current_state
         self.checked_items[item_id] = new_state
         
+        # Update checkbox icon - properly handle emoji characters
         current_text = self.tree.item(item_id, "text")
+        
+        # Remove old checkbox emoji (search for both types)
+        for emoji in ['🟦', '⬜', '☑', '☐']:
+            if current_text.startswith(emoji):
+                current_text = current_text[len(emoji):].lstrip()
+                break
+        
+        # Add new checkbox emoji
         if new_state:
-            new_text = self.check_images['checked'] + current_text[1:]
+            new_text = self.check_images['checked'] + ' ' + current_text
         else:
-            new_text = self.check_images['unchecked'] + current_text[1:]
+            new_text = self.check_images['unchecked'] + ' ' + current_text
         
         self.tree.item(item_id, text=new_text)
+        
+        # Update item tags for visual feedback
+        self.update_item_tags(item_id, hover=False)
     
     def select_all(self):
         """Select all checkboxes"""
@@ -1256,11 +1574,94 @@ class FileSearchApp:
         """Update status bar"""
         self.status_label.config(text=message)
     
-    def change_language(self, language: str):
-        """Change application language"""
-        self.current_language = language
-        self.save_settings()
-        messagebox.showinfo(self.t("menu_language"), f"Please restart the application to apply language changes.")
+    def change_language(self, lang_code: str, lang_display: str = None):
+        """Change application language and update UI immediately"""
+        if lang_display is None:
+            lang_display = lang_code
+            
+        old_language = self.current_language
+        old_language_code = self.current_language_code if hasattr(self, 'current_language_code') else 'en'
+        
+        self.current_language = lang_display
+        self.current_language_code = lang_code
+        
+        # Reset to default translations first
+        self.translations = self.DEFAULT_TRANSLATIONS.copy()
+        
+        # Try to load language file
+        success = False
+        lang_file = f"lang_{lang_code}.ini"
+        lang_path = resource_path(lang_file)
+        
+        if lang_code != "en":
+            success = self.load_language_file_by_code(lang_code)
+        else:
+            success = True  # English is default
+        
+        if success:
+            self.save_settings()
+            
+            # Show bilingual notification message FIRST (before UI update)
+            if lang_code == "ko":
+                message = (
+                    "언어가 한국어로 변경되었습니다.\n"
+                    "일부 UI 요소는 프로그램을 재시작하면 완전히 적용됩니다.\n\n"
+                    "Language changed to Korean.\n"
+                    "Some UI elements will be fully applied after restarting the program."
+                )
+            else:
+                message = (
+                    "Language changed to English.\n"
+                    "Some UI elements will be fully applied after restarting the program.\n\n"
+                    "언어가 영어로 변경되었습니다.\n"
+                    "일부 UI 요소는 프로그램을 재시작하면 완전히 적용됩니다."
+                )
+            
+            # Show message BEFORE updating UI
+            messagebox.showinfo("Language Changed / 언어 변경", message)
+            
+            # Update all UI text (with error handling)
+            try:
+                self.update_ui_text()
+            except Exception as e:
+                pass  # Silently continue if UI update fails
+        else:
+            # Revert to old language
+            self.current_language = old_language
+            self.current_language_code = old_language_code
+            if old_language_code != "en":
+                self.load_language_file_by_code(old_language_code)
+            
+            # Show detailed error with paths
+            error_msg = (
+                f"Failed to load language file for {lang_display}.\n\n"
+                f"Looking for: {lang_file}\n"
+                f"Search path: {lang_path}\n"
+                f"File exists: {os.path.exists(lang_path)}\n\n"
+                f"Please place the language file in the same folder as the program.\n\n"
+                f"Current directory: {os.getcwd()}\n"
+                f"Executable directory: {os.path.dirname(sys.executable)}\n"
+                f"Script directory: {os.path.dirname(os.path.abspath(__file__))}"
+            )
+            
+            messagebox.showerror("Language Error", error_msg)
+    
+    def update_ui_text(self):
+        """Update all UI text with current language"""
+        # Update window title
+        self.root.title(self.t("title"))
+        
+        # Update menu
+        self.menu_bar.entryconfig(0, label=self.t("menu_view"))
+        self.menu_bar.entryconfig(1, label=self.t("menu_language"))
+        self.menu_bar.entryconfig(2, label=self.t("menu_help"))
+        
+        # Update buttons (need to recreate main UI elements)
+        # For simplicity, show message that some elements need restart
+        # Or we can store all widget references and update them
+        
+        # Update status
+        self.update_status(self.t("ready"))
     
     def open_github(self):
         """Open GitHub repository"""
