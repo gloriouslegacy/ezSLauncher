@@ -244,6 +244,26 @@ class FileSearchApp:
         "open_with_not_supported": "Open With is only supported on Windows",
         "shortcut_not_supported": "Shortcut creation is only supported on Windows",
         "file_exists": "File already exists",
+        "copy_to": "Copy To...",
+        "move_to": "Move To...",
+        "add_to_startup": "Add to Startup",
+        "select_destination": "Select Destination Folder",
+        "copied_to": "Copied to:",
+        "moved_to": "Moved to:",
+        "success": "Success",
+        "overwrite_confirm": "File already exists. Overwrite?",
+        "already_exists": "Already Exists",
+        "replace_startup_shortcut": "Replace existing startup shortcut?",
+        "added_to_startup": "Added to startup programs:",
+        "files": "files",
+        "copy_complete": "Copy Complete",
+        "move_complete": "Move Complete", 
+        "startup_complete": "Startup Registration Complete",
+        "skipped": "Skipped",
+        "errors": "Errors",
+        "destination": "Destination",
+        "open_startup_folder": "Startup Folder",
+        "opened_startup_folder": "Opened startup folder",
     }
     
     def __init__(self, root):
@@ -766,6 +786,12 @@ class FileSearchApp:
         self.export_btn = ttk.Button(control_frame, text=self.t("export_results"), command=self.export_results, width=15)
         self.export_btn.grid(row=0, column=7, padx=(20, 0))
         
+        # Startup folder button (Windows only)
+        if sys.platform == 'win32':
+            self.startup_btn = ttk.Button(control_frame, text="🚀 " + self.t("open_startup_folder"), 
+                                         command=self.open_startup_folder, width=18)
+            self.startup_btn.grid(row=0, column=8, padx=(5, 0))
+        
         # Select all/none
         self.select_all_btn = ttk.Button(control_frame, text=self.t("select_all"), command=self.select_all, width=12)
         self.select_all_btn.grid(row=0, column=4, padx=(0, 5))
@@ -785,6 +811,10 @@ class FileSearchApp:
             self.select_all_btn,
             self.select_none_btn
         ]
+        
+        # Add startup button if it exists (Windows only)
+        if sys.platform == 'win32' and hasattr(self, 'startup_btn'):
+            self.control_buttons.append(self.startup_btn)
     
     def create_results_section(self, parent):
         """Create results display section with treeview"""
@@ -1195,16 +1225,90 @@ class FileSearchApp:
         self.update_item_tags(item_id, hover=False)
     
     def select_all(self):
-        """Select all checkboxes"""
-        for item_id in self.tree.get_children():
-            if not self.checked_items.get(item_id, False):
-                self.toggle_check_item(item_id)
+        """Select all checkboxes with batch processing to prevent freezing"""
+        items = self.tree.get_children()
+        total = len(items)
+        
+        if total == 0:
+            return
+        
+        # Disable UI updates temporarily
+        self.tree.configure(takefocus=0)
+        
+        # Process in batches
+        batch_size = 100
+        for i in range(0, total, batch_size):
+            batch = items[i:i+batch_size]
+            for item_id in batch:
+                if not self.checked_items.get(item_id, False):
+                    # Update state without full UI refresh
+                    self.checked_items[item_id] = True
+                    current_text = self.tree.item(item_id, "text")
+                    
+                    # Remove old checkbox
+                    for emoji in ['🟦', '⬜', '☑', '☐']:
+                        if current_text.startswith(emoji):
+                            current_text = current_text[len(emoji):].lstrip()
+                            break
+                    
+                    # Add checked icon
+                    new_text = self.check_images['checked'] + ' ' + current_text
+                    self.tree.item(item_id, text=new_text)
+                    
+                    # Update visual style
+                    all_items = self.tree.get_children()
+                    index = all_items.index(item_id)
+                    self.tree.item(item_id, tags=('checked',))
+            
+            # Allow UI to update periodically
+            if i % (batch_size * 5) == 0:
+                self.root.update_idletasks()
+        
+        # Re-enable UI
+        self.tree.configure(takefocus=1)
+        self.update_status(f"Selected {total} items")
     
     def select_none(self):
-        """Deselect all checkboxes"""
-        for item_id in self.tree.get_children():
-            if self.checked_items.get(item_id, False):
-                self.toggle_check_item(item_id)
+        """Deselect all checkboxes with batch processing"""
+        items = self.tree.get_children()
+        total = len(items)
+        
+        if total == 0:
+            return
+        
+        # Disable UI updates temporarily
+        self.tree.configure(takefocus=0)
+        
+        # Process in batches
+        batch_size = 100
+        for i in range(0, total, batch_size):
+            batch = items[i:i+batch_size]
+            for item_id in batch:
+                if self.checked_items.get(item_id, False):
+                    # Update state
+                    self.checked_items[item_id] = False
+                    current_text = self.tree.item(item_id, "text")
+                    
+                    # Remove old checkbox
+                    for emoji in ['🟦', '⬜', '☑', '☐']:
+                        if current_text.startswith(emoji):
+                            current_text = current_text[len(emoji):].lstrip()
+                            break
+                    
+                    # Add unchecked icon
+                    new_text = self.check_images['unchecked'] + ' ' + current_text
+                    self.tree.item(item_id, text=new_text)
+                    
+                    # Update visual style
+                    self.update_item_tags(item_id, hover=False)
+            
+            # Allow UI to update periodically
+            if i % (batch_size * 5) == 0:
+                self.root.update_idletasks()
+        
+        # Re-enable UI
+        self.tree.configure(takefocus=1)
+        self.update_status(f"Deselected {total} items")
     
     def show_context_menu(self, event):
         """Show right-click context menu"""
@@ -1215,6 +1319,14 @@ class FileSearchApp:
         self.tree.selection_set(item_id)
         file_path = self.tree.item(item_id, "values")[3]
         
+        # Get checked files
+        checked_files = [
+            self.tree.item(item, "values")[3]
+            for item, checked in self.checked_items.items()
+            if checked
+        ]
+        has_checked = len(checked_files) > 0
+        
         # Create context menu
         context_menu = tk.Menu(self.root, tearoff=0)
         context_menu.add_command(label=self.t("open"), command=lambda: self.execute_file(file_path, admin=False))
@@ -1223,12 +1335,44 @@ class FileSearchApp:
         context_menu.add_command(label=self.t("open_with"), command=lambda: self.open_with(file_path))
         context_menu.add_command(label=self.t("open_location"), command=lambda: self.open_file_location(file_path))
         context_menu.add_separator()
+        
+        # Copy and Move - work with checked files if any, otherwise single file
+        if has_checked:
+            context_menu.add_command(
+                label=f"📋 {self.t('copy_to')} ({len(checked_files)} {self.t('files')})", 
+                command=lambda: self.copy_files_to(checked_files)
+            )
+            context_menu.add_command(
+                label=f"📦 {self.t('move_to')} ({len(checked_files)} {self.t('files')})", 
+                command=lambda: self.move_files_to(checked_files)
+            )
+        else:
+            context_menu.add_command(label="📋 " + self.t("copy_to"), command=lambda: self.copy_files_to([file_path]))
+            context_menu.add_command(label="📦 " + self.t("move_to"), command=lambda: self.move_files_to([file_path]))
+        context_menu.add_separator()
+        
         context_menu.add_command(label=self.t("rename"), command=lambda: self.rename_file(file_path))
         context_menu.add_command(label=self.t("delete"), command=lambda: self.delete_file(file_path))
         context_menu.add_command(label=self.t("create_shortcut"), command=lambda: self.create_shortcut(file_path))
+        
+        # Add to startup - work with checked files if any
+        if sys.platform == 'win32':
+            if has_checked:
+                context_menu.add_command(
+                    label=f"🚀 {self.t('add_to_startup')} ({len(checked_files)} {self.t('files')})", 
+                    command=lambda: self.add_files_to_startup(checked_files)
+                )
+            else:
+                context_menu.add_command(label="🚀 " + self.t("add_to_startup"), command=lambda: self.add_files_to_startup([file_path]))
+        
         context_menu.add_separator()
         context_menu.add_command(label=self.t("copy_path"), command=lambda: self.copy_path(file_path))
         context_menu.add_command(label=self.t("properties"), command=lambda: self.show_properties(file_path))
+        
+        try:
+            context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            context_menu.grab_release()
         
         try:
             context_menu.tk_popup(event.x_root, event.y_root)
@@ -1486,6 +1630,209 @@ class FileSearchApp:
             
         except Exception as e:
             messagebox.showerror(self.t("error"), f"Failed to show properties:\n{str(e)}")
+    
+    def copy_files_to(self, file_paths: list):
+        """Copy multiple files to selected directory"""
+        if not file_paths:
+            return
+        
+        try:
+            # Create dialog with icon
+            dialog = tk.Toplevel(self.root)
+            dialog.withdraw()
+            self.set_window_icon(dialog)
+            dialog.destroy()
+            
+            destination = filedialog.askdirectory(
+                title=self.t("select_destination"),
+                initialdir=os.path.dirname(file_paths[0])
+            )
+            
+            if destination:
+                success_count = 0
+                skip_count = 0
+                error_count = 0
+                
+                for file_path in file_paths:
+                    try:
+                        filename = os.path.basename(file_path)
+                        dest_path = os.path.join(destination, filename)
+                        
+                        # Check if file exists
+                        if os.path.exists(dest_path):
+                            result = messagebox.askyesnocancel(
+                                self.t("file_exists"), 
+                                f"{filename}\n\n{self.t('overwrite_confirm')}"
+                            )
+                            if result is None:  # Cancel
+                                break
+                            elif not result:  # No
+                                skip_count += 1
+                                continue
+                        
+                        shutil.copy2(file_path, dest_path)
+                        success_count += 1
+                        self.update_status(f"Copying {success_count}/{len(file_paths)}: {filename}")
+                        
+                    except Exception as e:
+                        error_count += 1
+                        print(f"Error copying {file_path}: {e}")
+                
+                # Show summary
+                message = f"{self.t('copy_complete')}\n\n"
+                message += f"{self.t('success')}: {success_count}\n"
+                if skip_count > 0:
+                    message += f"{self.t('skipped')}: {skip_count}\n"
+                if error_count > 0:
+                    message += f"{self.t('errors')}: {error_count}\n"
+                message += f"\n{self.t('destination')}: {destination}"
+                
+                messagebox.showinfo(self.t("copy_complete"), message)
+                
+        except Exception as e:
+            messagebox.showerror(self.t("error"), f"Copy failed:\n{str(e)}")
+    
+    def move_files_to(self, file_paths: list):
+        """Move multiple files to selected directory"""
+        if not file_paths:
+            return
+        
+        try:
+            dialog = tk.Toplevel(self.root)
+            dialog.withdraw()
+            self.set_window_icon(dialog)
+            dialog.destroy()
+            
+            destination = filedialog.askdirectory(
+                title=self.t("select_destination"),
+                initialdir=os.path.dirname(file_paths[0])
+            )
+            
+            if destination:
+                success_count = 0
+                skip_count = 0
+                error_count = 0
+                
+                for file_path in file_paths:
+                    try:
+                        filename = os.path.basename(file_path)
+                        dest_path = os.path.join(destination, filename)
+                        
+                        if os.path.exists(dest_path):
+                            result = messagebox.askyesnocancel(
+                                self.t("file_exists"), 
+                                f"{filename}\n\n{self.t('overwrite_confirm')}"
+                            )
+                            if result is None:
+                                break
+                            elif not result:
+                                skip_count += 1
+                                continue
+                        
+                        shutil.move(file_path, dest_path)
+                        success_count += 1
+                        self.update_status(f"Moving {success_count}/{len(file_paths)}: {filename}")
+                        
+                    except Exception as e:
+                        error_count += 1
+                        print(f"Error moving {file_path}: {e}")
+                
+                message = f"{self.t('move_complete')}\n\n"
+                message += f"{self.t('success')}: {success_count}\n"
+                if skip_count > 0:
+                    message += f"{self.t('skipped')}: {skip_count}\n"
+                if error_count > 0:
+                    message += f"{self.t('errors')}: {error_count}\n"
+                message += f"\n{self.t('destination')}: {destination}"
+                
+                messagebox.showinfo(self.t("move_complete"), message)
+                
+        except Exception as e:
+            messagebox.showerror(self.t("error"), f"Move failed:\n{str(e)}")
+    
+    def add_files_to_startup(self, file_paths: list):
+        """Add multiple file shortcuts to Windows startup folder"""
+        if sys.platform != 'win32':
+            messagebox.showerror(self.t("error"), "This feature is only available on Windows")
+            return
+        
+        if not file_paths:
+            return
+        
+        try:
+            import win32com.client
+            
+            startup_folder = os.path.join(
+                os.environ['APPDATA'],
+                r'Microsoft\Windows\Start Menu\Programs\Startup'
+            )
+            
+            success_count = 0
+            skip_count = 0
+            error_count = 0
+            
+            for file_path in file_paths:
+                try:
+                    filename = os.path.splitext(os.path.basename(file_path))[0]
+                    shortcut_path = os.path.join(startup_folder, f"{filename}.lnk")
+                    
+                    if os.path.exists(shortcut_path):
+                        result = messagebox.askyesnocancel(
+                            self.t("already_exists"),
+                            f"{filename}\n\n{self.t('replace_startup_shortcut')}"
+                        )
+                        if result is None:
+                            break
+                        elif not result:
+                            skip_count += 1
+                            continue
+                    
+                    shell = win32com.client.Dispatch("WScript.Shell")
+                    shortcut = shell.CreateShortCut(shortcut_path)
+                    shortcut.TargetPath = file_path
+                    shortcut.WorkingDirectory = os.path.dirname(file_path)
+                    shortcut.IconLocation = file_path
+                    shortcut.save()
+                    
+                    success_count += 1
+                    self.update_status(f"Adding to startup {success_count}/{len(file_paths)}: {filename}")
+                    
+                except Exception as e:
+                    error_count += 1
+                    print(f"Error adding {file_path} to startup: {e}")
+            
+            message = f"{self.t('startup_complete')}\n\n"
+            message += f"{self.t('success')}: {success_count}\n"
+            if skip_count > 0:
+                message += f"{self.t('skipped')}: {skip_count}\n"
+            if error_count > 0:
+                message += f"{self.t('errors')}: {error_count}"
+            
+            messagebox.showinfo(self.t("startup_complete"), message)
+            
+        except ImportError:
+            messagebox.showerror(
+                self.t("error"),
+                "pywin32 module required.\nInstall with: pip install pywin32"
+            )
+        except Exception as e:
+            messagebox.showerror(self.t("error"), f"Failed to add to startup:\n{str(e)}")
+    
+    def open_startup_folder(self):
+        """Open Windows startup folder"""
+        if sys.platform != 'win32':
+            messagebox.showerror(self.t("error"), "This feature is only available on Windows")
+            return
+        
+        try:
+            startup_folder = os.path.join(
+                os.environ['APPDATA'],
+                r'Microsoft\Windows\Start Menu\Programs\Startup'
+            )
+            os.startfile(startup_folder)
+            self.update_status(self.t("opened_startup_folder"))
+        except Exception as e:
+            messagebox.showerror(self.t("error"), f"Failed to open startup folder:\n{str(e)}")
     
     def execute_selected(self):
         """Execute all selected files"""
