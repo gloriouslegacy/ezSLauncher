@@ -294,7 +294,7 @@ class FileSearchApp:
         
         # Set title with correct language
         self.root.title(self.t("title"))
-        self.root.geometry("1000x700")
+        self.root.geometry("1052x700")
         
         # Set icon if available
         self.set_icon()
@@ -304,6 +304,7 @@ class FileSearchApp:
         self.checked_items: Dict[str, bool] = {}
         self.is_searching = False
         self.search_cancelled = False
+        self.save_timer = None  # For debouncing save_settings
         
         # Dark mode state
         self.dark_mode = self.config.get("dark_mode", False)
@@ -311,36 +312,38 @@ class FileSearchApp:
         # Define color themes
         self.themes = {
             "light": {
-                "bg": "#ffffff",
+                "bg": "#f3f3f3",              # Windows 11 light background
                 "fg": "#000000",
-                "select_bg": "#0078d7",
+                "select_bg": "#0067c0",       # Windows 11 accent blue
                 "select_fg": "#ffffff",
                 "entry_bg": "#ffffff",
                 "entry_fg": "#000000",
-                "button_bg": "#e1e1e1",
-                "frame_bg": "#ffffff",
+                "button_bg": "#fbfbfb",       # Lighter button
+                "frame_bg": "#f3f3f3",
                 "tree_bg": "#ffffff",
                 "tree_fg": "#000000",
-                "status_bg": "#f0f0f0",
-                "tip_fg": "gray",
-                "labelframe_bg": "#ffffff",
-                "labelframe_fg": "#000000"
+                "status_bg": "#f9f9f9",
+                "tip_fg": "#605e5c",          # Subtle gray
+                "labelframe_bg": "#f3f3f3",
+                "labelframe_fg": "#323130",
+                "border": "#e1dfdd"           # Border color
             },
             "dark": {
-                "bg": "#27282c",              # Main background - softer dark
-                "fg": "#e8e8e8",              # Main text - bright for readability
-                "select_bg": "#0078d7",       # Selection blue
-                "select_fg": "#ffffff",       # Selection text
-                "entry_bg": "#2b2d39",        # Input fields - lighter than bg
-                "entry_fg": "#e8e8e8",        # Input text
-                "button_bg": "#2b2d39",       # Buttons
-                "frame_bg": "#2b2d39",        # Frames
-                "tree_bg": "#2b2d39",         # Tree background
-                "tree_fg": "#e8e8e8",         # Tree text
-                "status_bg": "#2b2d39",       # Status bar
-                "tip_fg": "#888888",          # Hint text
-                "labelframe_bg": "#2b2d39",   # Label frame background
-                "labelframe_fg": "#e8e8e8"    # Label frame text
+                "bg": "#202020",              # Windows 11 dark main bg
+                "fg": "#ffffff",              # Pure white text
+                "select_bg": "#0067c0",       # Windows 11 accent blue
+                "select_fg": "#ffffff",
+                "entry_bg": "#2b2b2b",        # Input field bg
+                "entry_fg": "#ffffff",
+                "button_bg": "#2b2b2b",       # Button bg
+                "frame_bg": "#202020",
+                "tree_bg": "#1e1e1e",         # Slightly darker tree
+                "tree_fg": "#ffffff",
+                "status_bg": "#1a1a1a",       # Darker status bar
+                "tip_fg": "#9d9d9d",          # Gray hints
+                "labelframe_bg": "#202020",
+                "labelframe_fg": "#ffffff",
+                "border": "#3d3d3d"           # Subtle border
             }
         }
         
@@ -417,21 +420,12 @@ class FileSearchApp:
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
         
-        # View menu
-        view_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label=self.t("menu_view"), menu=view_menu)
+        # File menu
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="FILE", menu=file_menu)
         
-        # Create BooleanVar for dark mode and keep reference
-        self.dark_mode_var = tk.BooleanVar(value=self.dark_mode)
-        view_menu.add_checkbutton(
-            label=self.t("menu_dark_mode"), 
-            command=self.toggle_dark_mode,
-            variable=self.dark_mode_var
-        )
-        
-        # Language menu
-        lang_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label=self.t("menu_language"), menu=lang_menu)
+        # Language submenu
+        lang_menu = tk.Menu(file_menu, tearoff=0)
         
         # Language display name to code mapping
         self.language_map = {
@@ -454,9 +448,22 @@ class FileSearchApp:
                 command=lambda ld=lang_display, lc=lang_code: self.change_language(lc, ld)
             )
         
+        file_menu.add_cascade(label=self.t("menu_language"), menu=lang_menu)
+        
+        # Create BooleanVar for dark mode and keep reference
+        self.dark_mode_var = tk.BooleanVar(value=self.dark_mode)
+        file_menu.add_checkbutton(
+            label=self.t("menu_dark_mode"), 
+            command=self.toggle_dark_mode,
+            variable=self.dark_mode_var
+        )
+        
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label=self.t("menu_help"), menu=help_menu)
+        menubar.add_cascade(label="HELP", menu=help_menu)
         help_menu.add_command(label=self.t("menu_github"), command=self.open_github)
         help_menu.add_separator()
         help_menu.add_command(label=self.t("menu_about"), command=self.show_about)
@@ -501,28 +508,41 @@ class FileSearchApp:
         # TLabel
         style.configure("TLabel", background=theme["bg"], foreground=theme["fg"])
         
-        # TButton
-        style.configure("TButton", background=theme["button_bg"], foreground=theme["fg"])
+        # TButton - Windows 11 style
+        style.configure("TButton", 
+                       background=theme["button_bg"], 
+                       foreground=theme["fg"],
+                       borderwidth=1,
+                       relief="flat",
+                       padding=(10, 5))
         style.map("TButton",
-                 background=[('active', theme["select_bg"])],
-                 foreground=[('active', theme["select_fg"])])
+                 background=[('active', theme["select_bg"]), ('pressed', theme["select_bg"])],
+                 foreground=[('active', theme["select_fg"]), ('pressed', theme["select_fg"])],
+                 relief=[('pressed', 'flat')])
         
-        # TEntry
+        # TEntry - Windows 11 style
         style.configure("TEntry",
                        fieldbackground=theme["entry_bg"],
                        foreground=theme["entry_fg"],
-                       insertcolor=theme["fg"])
+                       insertcolor=theme["fg"],
+                       borderwidth=1,
+                       relief="solid")
+        style.map("TEntry",
+                 bordercolor=[('focus', theme["select_bg"])])
         
         # TCheckbutton
         style.configure("TCheckbutton", background=theme["bg"], foreground=theme["fg"])
         
-        # TLabelframe
+        # TLabelframe - Windows 11 style
         style.configure("TLabelframe", 
                        background=theme["labelframe_bg"],
-                       foreground=theme["labelframe_fg"])
+                       foreground=theme["labelframe_fg"],
+                       borderwidth=1,
+                       relief="solid")
         style.configure("TLabelframe.Label",
                        background=theme["labelframe_bg"],
-                       foreground=theme["labelframe_fg"])
+                       foreground=theme["labelframe_fg"],
+                       font=('Segoe UI', 9, 'bold'))
         
         # Increase Treeview row height by 50%
         style.configure("Treeview", rowheight=30)
@@ -662,14 +682,27 @@ class FileSearchApp:
                 style.map("Treeview.Heading",
                         background=[('active', theme["select_bg"])])
             
-            # Scrollbar
+            # Scrollbar - Windows 11 style (same for both vertical and horizontal)
             elif widget_class in ["Scrollbar", "TScrollbar"]:
                 style = ttk.Style()
-                style.configure("TScrollbar",
-                              background=theme["button_bg"],
-                              troughcolor=theme["bg"],
-                              borderwidth=1,
-                              arrowcolor=theme["fg"])
+                if self.dark_mode:
+                    # Dark theme scrollbar
+                    style.configure("TScrollbar",
+                                  background="#3d3d3d",      # Scrollbar thumb
+                                  troughcolor="#1a1a1a",     # Track background
+                                  borderwidth=0,
+                                  arrowcolor="#ffffff")
+                    style.map("TScrollbar",
+                            background=[('active', '#4d4d4d'), ('pressed', '#5d5d5d')])
+                else:
+                    # Light theme scrollbar
+                    style.configure("TScrollbar",
+                                  background="#c2c3c2",      # Scrollbar thumb
+                                  troughcolor="#f3f3f3",     # Track background
+                                  borderwidth=0,
+                                  arrowcolor="#605e5c")
+                    style.map("TScrollbar",
+                            background=[('active', '#a6a6a6'), ('pressed', '#8d8d8d')])
             
         except Exception as e:
             pass
@@ -788,6 +821,12 @@ class FileSearchApp:
         self.search_dir = ttk.Entry(filter_frame, width=60)
         self.search_dir.grid(row=3, column=1, columnspan=4, sticky=(tk.W, tk.E), pady=(10, 0), padx=(0, 5))
         
+        # Bind auto-save on filter changes (with debounce)
+        self.name_filter.bind('<KeyRelease>', lambda e: self.schedule_save_settings())
+        self.ext_filter.bind('<KeyRelease>', lambda e: self.schedule_save_settings())
+        self.path_filter.bind('<KeyRelease>', lambda e: self.schedule_save_settings())
+        self.search_dir.bind('<KeyRelease>', lambda e: self.schedule_save_settings())
+        
         self.browse_btn = ttk.Button(filter_frame, text=self.t("browse"), command=self.browse_directory)
         self.browse_btn.grid(row=3, column=5, pady=(10, 0), sticky=tk.W)
         
@@ -796,7 +835,7 @@ class FileSearchApp:
         options_frame.grid(row=4, column=0, columnspan=6, sticky=tk.W, pady=(5, 0))
         
         self.recursive_var = tk.BooleanVar(value=True)
-        recursive_check = ttk.Checkbutton(options_frame, text=self.t("include_subdirs"), variable=self.recursive_var)
+        recursive_check = ttk.Checkbutton(options_frame, text=self.t("include_subdirs"), variable=self.recursive_var, command=self.save_settings)
         recursive_check.pack(side=tk.LEFT, padx=(0, 20))
         
         self.regex_var = tk.BooleanVar(value=False)
@@ -939,19 +978,19 @@ class FileSearchApp:
         """Setup zebra striping and hover effects for treeview"""
         # Define row colors based on theme
         if self.dark_mode:
-            # Dark mode colors - improved contrast
-            self.tree.tag_configure('oddrow', background='#2b2d39')      # Lighter gray
-            self.tree.tag_configure('evenrow', background='#27282c')     # Slightly darker
-            self.tree.tag_configure('hover', background='#1B1C24')       # Hover highlight
-            self.tree.tag_configure('checked', background='#1e3a5f', foreground='#ffffff')     # Dark blue
-            self.tree.tag_configure('checked_hover', background='#2a4d7f', foreground='#ffffff')  # Lighter blue
+            # Windows 11 Dark mode colors
+            self.tree.tag_configure('oddrow', background='#1e1e1e')      # Darker
+            self.tree.tag_configure('evenrow', background='#252525')     # Slightly lighter
+            self.tree.tag_configure('hover', background='#2d2d2d')       # Subtle hover
+            self.tree.tag_configure('checked', background='#1a3a52', foreground='#ffffff')     # Dark blue
+            self.tree.tag_configure('checked_hover', background='#24537a', foreground='#ffffff')  # Lighter blue
         else:
-            # Light mode colors
+            # Windows 11 Light mode colors
             self.tree.tag_configure('oddrow', background='#ffffff')
-            self.tree.tag_configure('evenrow', background='#f3f4f6')
-            self.tree.tag_configure('hover', background='#e5e7eb')
-            self.tree.tag_configure('checked', background='#dbeafe', foreground='#1e40af')
-            self.tree.tag_configure('checked_hover', background='#bfdbfe', foreground='#1e3a8a')
+            self.tree.tag_configure('evenrow', background='#fafafa')
+            self.tree.tag_configure('hover', background='#f3f3f3')
+            self.tree.tag_configure('checked', background='#e6f2ff', foreground='#0067c0')
+            self.tree.tag_configure('checked_hover', background='#cce5ff', foreground='#005a9e')
     
     def on_tree_hover(self, event):
         """Handle mouse hover over tree items"""
@@ -1074,6 +1113,7 @@ class FileSearchApp:
         if directory:
             self.search_dir.delete(0, tk.END)
             self.search_dir.insert(0, directory)
+            self.save_settings()
     
     def disable_controls(self):
         """Disable all controls during search"""
@@ -2262,6 +2302,12 @@ class FileSearchApp:
         ttk.Label(about_frame, text=self.t("copyright")).pack(pady=(0, 20))
         
         ttk.Button(about_frame, text=self.t("close"), command=about_window.destroy).pack()
+    
+    def schedule_save_settings(self):
+        """Schedule save settings with debounce (wait 500ms after last change)"""
+        if self.save_timer:
+            self.root.after_cancel(self.save_timer)
+        self.save_timer = self.root.after(500, self.save_settings)
     
     def save_settings(self):
         """Save settings to config file"""
