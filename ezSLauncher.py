@@ -367,7 +367,7 @@ class FileSearchApp:
         lang_file = f"lang_{lang_code}.ini"
         
         # Try to load from resource path (for PyInstaller)
-        lang_path = resource_path(lang_file)
+        lang_path = resource_path(os.path.join("language", lang_file))
         
         if os.path.exists(lang_path):
             try:
@@ -438,7 +438,7 @@ class FileSearchApp:
         available_langs = [("English", "en")]
         
         # Check for Korean language file
-        lang_ko_path = resource_path("lang_ko.ini")
+        lang_ko_path = resource_path(os.path.join("language", "lang_ko.ini"))
         if os.path.exists(lang_ko_path):
             available_langs.append(("한국어", "ko"))
         

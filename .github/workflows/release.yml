@@ -61,12 +61,12 @@ jobs:
           }
           
           Write-Host "`n=== Language Files Check ==="
-          if (Test-Path "./lang_ko.ini") {
-            Write-Host "✓ lang_ko.ini found"
-            $langSize = (Get-Item "./lang_ko.ini").Length
+          if (Test-Path "./language/lang_ko.ini") {
+            Write-Host "✓ language/lang_ko.ini found"
+            $langSize = (Get-Item "./language/lang_ko.ini").Length
             Write-Host "  Size: $langSize bytes"
           } else {
-            Write-Host "⚠ lang_ko.ini NOT found - Korean language will not be available"
+            Write-Host "⚠ language/lang_ko.ini NOT found - Korean language will not be available"
           }
           
           Write-Host "`n=== Directory Structure ==="
@@ -158,11 +158,11 @@ jobs:
           Write-Host "Icon path: $iconPath"
           Write-Host "Icon exists: $(Test-Path 'icon\icon.ico')"
           
-          # Check if lang_ko.ini exists
-          if (Test-Path "lang_ko.ini") {
-            Write-Host "✓ lang_ko.ini found"
+          # Check if language folder exists
+          if (Test-Path "language/lang_ko.ini") {
+            Write-Host "✓ language/lang_ko.ini found"
           } else {
-            Write-Host "⚠ lang_ko.ini NOT found - Korean language will not be available"
+            Write-Host "⚠ language/lang_ko.ini NOT found - Korean language will not be available"
           }
           
           # PyInstaller for portable - everything in one EXE
@@ -173,7 +173,7 @@ jobs:
             --version-file "version_info.txt" `
             --icon="$iconPath" `
             --add-data "icon;icon" `
-            --add-data "lang_ko.ini;." `
+            --add-data "language;language" `
             ezSLauncher.py
           
           if ($LASTEXITCODE -ne 0) {
@@ -197,17 +197,14 @@ jobs:
           
           $iconPath = "icon/icon.ico"
           
-          # Check if lang_ko.ini exists
-          if (Test-Path "lang_ko.ini") {
-            Write-Host "✓ lang_ko.ini found"
+          # Check if language folder exists
+          if (Test-Path "language/lang_ko.ini") {
+            Write-Host "✓ language/lang_ko.ini found"
           } else {
-            Write-Host "⚠ lang_ko.ini NOT found - Korean language will not be available"
+            Write-Host "⚠ language/lang_ko.ini NOT found - Korean language will not be available"
           }
           
-          # Clean previous build
-          if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-          
-          # PyInstaller for installer - separate files in folder
+          # PyInstaller for installer - separate files
           pyinstaller --onedir `
             --windowed `
             --name "ezSLauncher" `
@@ -215,7 +212,7 @@ jobs:
             --version-file "version_info.txt" `
             --icon="$iconPath" `
             --add-data "icon;icon" `
-            --add-data "lang_ko.ini;." `
+            --add-data "language;language" `
             ezSLauncher.py
           
           if ($LASTEXITCODE -ne 0) {
@@ -230,276 +227,162 @@ jobs:
             $size = (Get-Item "dist/ezSLauncher/ezSLauncher.exe").Length
             Write-Host "✓ Installer EXE created: $($size / 1MB) MB"
             
-            Write-Host "`n=== Installer Contents ==="
-            Get-ChildItem "dist/ezSLauncher" -Recurse | Format-Table Name, Length
+            Write-Host "`n=== Installer Package Contents ==="
+            Get-ChildItem "dist/ezSLauncher" -Recurse | Where-Object { -not $_.PSIsContainer } | Format-Table Name, Length
+          }
+
+      # Create NSIS installer
+      - name: Create NSIS Installer
+        shell: pwsh
+        run: |
+          Write-Host "=== Creating NSIS Installer ==="
+          
+          # Install NSIS
+          choco install nsis -y
+          $env:Path += ";C:\Program Files (x86)\NSIS"
+          
+          # Create NSIS script
+          $version = "${{ steps.vars.outputs.version }}" -replace '-.*',''
+          
+          $nsisScript = @"
+          !define PRODUCT_NAME "ezSLauncher"
+          !define PRODUCT_VERSION "$version"
+          !define PRODUCT_PUBLISHER "ez"
+          !define PRODUCT_WEB_SITE "https://github.com/bigboss-s/ezSLauncher"
+          !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\ezSLauncher.exe"
+          !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${PRODUCT_NAME}"
+          !define PRODUCT_UNINST_ROOT_KEY "HKLM"
+          
+          ; Modern UI
+          !include "MUI2.nsh"
+          
+          ; MUI Settings
+          !define MUI_ABORTWARNING
+          !define MUI_ICON "icon\icon.ico"
+          !define MUI_UNICON "`${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
+          
+          ; Welcome page
+          !insertmacro MUI_PAGE_WELCOME
+          ; License page
+          !insertmacro MUI_PAGE_LICENSE "LICENSE"
+          ; Directory page
+          !insertmacro MUI_PAGE_DIRECTORY
+          ; Instfiles page
+          !insertmacro MUI_PAGE_INSTFILES
+          ; Finish page
+          !define MUI_FINISHPAGE_RUN "`$INSTDIR\ezSLauncher.exe"
+          !insertmacro MUI_PAGE_FINISH
+          
+          ; Uninstaller pages
+          !insertmacro MUI_UNPAGE_INSTFILES
+          
+          ; Language files
+          !insertmacro MUI_LANGUAGE "English"
+          
+          ; Installer settings
+          Name "`${PRODUCT_NAME} `${PRODUCT_VERSION}"
+          OutFile "ezSLauncher_Setup.exe"
+          InstallDir "`$PROGRAMFILES\ezSLauncher"
+          InstallDirRegKey HKLM "`${PRODUCT_DIR_REGKEY}" ""
+          ShowInstDetails show
+          ShowUnInstDetails show
+          RequestExecutionLevel admin
+          
+          Section "MainSection" SEC01
+            SetOutPath "`$INSTDIR"
+            SetOverwrite ifnewer
             
-            # Verify lang_ko.ini is included
-            if (Test-Path "dist/ezSLauncher/lang_ko.ini") {
-              Write-Host "✓ lang_ko.ini included in installer"
+            ; Copy all files from dist folder
+            File /r "dist\ezSLauncher\*.*"
+            
+            ; Create shortcuts
+            CreateDirectory "`$SMPROGRAMS\ezSLauncher"
+            CreateShortCut "`$SMPROGRAMS\ezSLauncher\ezSLauncher.lnk" "`$INSTDIR\ezSLauncher.exe"
+            CreateShortCut "`$DESKTOP\ezSLauncher.lnk" "`$INSTDIR\ezSLauncher.exe"
+            CreateShortCut "`$SMPROGRAMS\ezSLauncher\Uninstall.lnk" "`$INSTDIR\uninst.exe"
+          SectionEnd
+          
+          Section -AdditionalIcons
+            WriteIniStr "`$INSTDIR\`${PRODUCT_NAME}.url" "InternetShortcut" "URL" "`${PRODUCT_WEB_SITE}"
+            CreateShortCut "`$SMPROGRAMS\ezSLauncher\Website.lnk" "`$INSTDIR\`${PRODUCT_NAME}.url"
+          SectionEnd
+          
+          Section -Post
+            WriteUninstaller "`$INSTDIR\uninst.exe"
+            WriteRegStr HKLM "`${PRODUCT_DIR_REGKEY}" "" "`$INSTDIR\ezSLauncher.exe"
+            WriteRegStr `${PRODUCT_UNINST_ROOT_KEY} "`${PRODUCT_UNINST_KEY}" "DisplayName" "`$(^Name)"
+            WriteRegStr `${PRODUCT_UNINST_ROOT_KEY} "`${PRODUCT_UNINST_KEY}" "UninstallString" "`$INSTDIR\uninst.exe"
+            WriteRegStr `${PRODUCT_UNINST_ROOT_KEY} "`${PRODUCT_UNINST_KEY}" "DisplayIcon" "`$INSTDIR\ezSLauncher.exe"
+            WriteRegStr `${PRODUCT_UNINST_ROOT_KEY} "`${PRODUCT_UNINST_KEY}" "DisplayVersion" "`${PRODUCT_VERSION}"
+            WriteRegStr `${PRODUCT_UNINST_ROOT_KEY} "`${PRODUCT_UNINST_KEY}" "URLInfoAbout" "`${PRODUCT_WEB_SITE}"
+            WriteRegStr `${PRODUCT_UNINST_ROOT_KEY} "`${PRODUCT_UNINST_KEY}" "Publisher" "`${PRODUCT_PUBLISHER}"
+          SectionEnd
+          
+          Function un.onUninstSuccess
+            HideWindow
+            MessageBox MB_ICONINFORMATION|MB_OK "ezSLauncher was successfully removed from your computer."
+          FunctionEnd
+          
+          Function un.onInit
+            MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "Are you sure you want to completely remove ezSLauncher?" IDYES +2
+            Abort
+          FunctionEnd
+          
+          Section Uninstall
+            Delete "`$INSTDIR\`${PRODUCT_NAME}.url"
+            Delete "`$INSTDIR\uninst.exe"
+            Delete "`$INSTDIR\ezSLauncher.exe"
+            
+            ; Remove all files
+            RMDir /r "`$INSTDIR"
+            
+            ; Remove shortcuts
+            Delete "`$SMPROGRAMS\ezSLauncher\*.*"
+            Delete "`$DESKTOP\ezSLauncher.lnk"
+            RMDir "`$SMPROGRAMS\ezSLauncher"
+            
+            DeleteRegKey `${PRODUCT_UNINST_ROOT_KEY} "`${PRODUCT_UNINST_KEY}"
+            DeleteRegKey HKLM "`${PRODUCT_DIR_REGKEY}"
+            SetAutoClose true
+          SectionEnd
+          "@
+          
+          # Save NSIS script
+          $nsisScript | Out-File -FilePath "installer.nsi" -Encoding UTF8
+          
+          Write-Host "=== NSIS Script Created ==="
+          Get-Content "installer.nsi"
+          
+          # Create installer
+          Write-Host "`n=== Compiling NSIS Installer ==="
+          & "C:\Program Files (x86)\NSIS\makensis.exe" "/V4" "installer.nsi"
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "✗ NSIS compilation failed with exit code $LASTEXITCODE"
+            
+            Write-Host "`n=== Checking Build Directory ==="
+            if (Test-Path "dist/ezSLauncher") {
+              Write-Host "dist/ezSLauncher contents:"
+              Get-ChildItem "dist/ezSLauncher" -Recurse | Format-Table Name, Length
             } else {
-              Write-Host "⚠ lang_ko.ini NOT found in installer"
+              Write-Host "✗ dist/ezSLauncher directory not found"
             }
-          }
-
-      # Install Inno Setup
-      - name: Install Inno Setup
-        shell: pwsh
-        run: |
-          Write-Host "=== Installing Inno Setup ==="
-          
-          # Download Inno Setup
-          $innoUrl = "https://jrsoftware.org/download.php/is.exe"
-          $innoInstaller = "innosetup-installer.exe"
-          
-          Write-Host "Downloading Inno Setup..."
-          Invoke-WebRequest -Uri $innoUrl -OutFile $innoInstaller
-          
-          # Install silently
-          Write-Host "Installing Inno Setup..."
-          Start-Process -FilePath $innoInstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
-          
-          # Verify installation
-          $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (Test-Path $isccPath) {
-            Write-Host "✓ Inno Setup installed successfully"
-            Write-Host "ISCC path: $isccPath"
-          } else {
-            Write-Host "✗ Inno Setup installation failed"
-            Write-Host "Expected path: $isccPath"
-            Write-Host "Searching for ISCC.exe..."
-            Get-ChildItem "C:\Program Files (x86)" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue | Format-Table FullName
-            exit 1
-          }
-
-      # Create Inno Setup Script
-      - name: Create Inno Setup Script
-        shell: pwsh
-        run: |
-          Write-Host "=== Creating Inno Setup Script ==="
-          
-          $version = "${{ steps.vars.outputs.version }}"
-          $versionClean = $version -replace '-.*',''
-          
-          # Check what files exist in the build output
-          Write-Host "`n=== Checking build output ==="
-          Write-Host "Main executable:"
-          if (Test-Path "dist\ezSLauncher\ezSLauncher.exe") {
-            Write-Host "✓ ezSLauncher.exe found"
-          } else {
-            Write-Host "✗ ezSLauncher.exe NOT found"
-          }
-          
-          Write-Host "`nLanguage file:"
-          if (Test-Path "dist\ezSLauncher\lang_ko.ini") {
-            Write-Host "✓ lang_ko.ini found"
-          } else {
-            Write-Host "✗ lang_ko.ini NOT found"
-          }
-          
-          Write-Host "`nIcon folder:"
-          if (Test-Path "dist\ezSLauncher\icon") {
-            Write-Host "✓ icon folder found"
-            Get-ChildItem "dist\ezSLauncher\icon" | Format-Table Name
-          } else {
-            Write-Host "⚠ icon folder NOT found - will use fallback"
-          }
-          
-          Write-Host "`n_internal folder:"
-          if (Test-Path "dist\ezSLauncher\_internal") {
-            Write-Host "✓ _internal folder found"
-          } else {
-            Write-Host "⚠ _internal folder NOT found"
-          }
-          
-          # Create ISS file using array of lines
-          $issLines = @(
-            "; ezSLauncher Inno Setup Script",
-            "; Creates Windows installer with setup wizard",
-            "",
-            "#define MyAppName `"ezSLauncher`"",
-            "#define MyAppVersion `"$versionClean`"",
-            "#define MyAppPublisher `"ez`"",
-            "#define MyAppURL `"https://github.com/gloriouslegacy/ezSLauncher`"",
-            "#define MyAppExeName `"ezSLauncher.exe`"",
-            "",
-            "[Setup]",
-            "; App information",
-            "AppId={{E7A5C4B2-8D9F-4E3A-9B2C-1F6D8A4E5B3C}",
-            "AppName={#MyAppName}",
-            "AppVersion={#MyAppVersion}",
-            "AppVerName={#MyAppName} {#MyAppVersion}",
-            "AppPublisher={#MyAppPublisher}",
-            "AppPublisherURL={#MyAppURL}",
-            "AppSupportURL={#MyAppURL}",
-            "AppUpdatesURL={#MyAppURL}",
-            "",
-            "; Installation directories",
-            "DefaultDirName={autopf}\{#MyAppName}",
-            "DefaultGroupName={#MyAppName}",
-            "DisableProgramGroupPage=yes",
-            "",
-            "; Output",
-            "OutputDir=installer_output",
-            "OutputBaseFilename=ezSLauncher_Setup_{#MyAppVersion}",
-            "",
-            "; Compression",
-            "Compression=lzma2",
-            "SolidCompression=yes",
-            "",
-            "; Windows version requirement",
-            "MinVersion=10.0.19041",
-            "",
-            "; Privileges",
-            "PrivilegesRequired=admin",
-            "PrivilegesRequiredOverridesAllowed=dialog",
-            "",
-            "; UI settings",
-            "WizardStyle=modern",
-            "UninstallDisplayIcon={app}\{#MyAppExeName}",
-            "",
-            "[Languages]",
-            "Name: `"english`"; MessagesFile: `"compiler:Default.isl`"",
-            "",
-            "[Tasks]",
-            "Name: `"desktopicon`"; Description: `"Create a desktop shortcut`"; GroupDescription: `"Additional shortcuts:`"; Flags: unchecked",
-            "",
-            "[Files]",
-            "; Main executable",
-            "Source: `"dist\ezSLauncher\ezSLauncher.exe`"; DestDir: `"{app}`"; Flags: ignoreversion",
-            "",
-            "; Language file (optional)",
-            "Source: `"dist\ezSLauncher\lang_ko.ini`"; DestDir: `"{app}`"; Flags: ignoreversion skipifsourcedoesntexist",
-            "",
-            "; Icon folder (optional)",
-            "Source: `"dist\ezSLauncher\icon\*`"; DestDir: `"{app}\icon`"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist",
-            "",
-            "; Internal dependencies",
-            "Source: `"dist\ezSLauncher\_internal\*`"; DestDir: `"{app}\_internal`"; Flags: ignoreversion recursesubdirs createallsubdirs",
-            "",
-            "[Icons]",
-            "; Start Menu shortcuts",
-            "Name: `"{group}\{#MyAppName}`"; Filename: `"{app}\{#MyAppExeName}`"",
-            "Name: `"{group}\Uninstall {#MyAppName}`"; Filename: `"{uninstallexe}`"",
-            "",
-            "; Desktop shortcut",
-            "Name: `"{autodesktop}\{#MyAppName}`"; Filename: `"{app}\{#MyAppExeName}`"; Tasks: desktopicon",
-            "",
-            "[Run]",
-            "; Option to run after installation",
-            "Filename: `"{app}\{#MyAppExeName}`"; Description: `"Launch {#MyAppName}`"; Flags: nowait postinstall skipifsilent",
-            "",
-            "[UninstallDelete]",
-            "; Clean up config files on uninstall",
-            "Type: files; Name: `"{app}\app_config.json`"",
-            "Type: dirifempty; Name: `"{app}`""
-          )
-          
-          # Save ISS file
-          $issLines | Out-File -FilePath "ezSLauncher_setup.iss" -Encoding UTF8
-          
-          Write-Host "`n✓ ISS file created"
-          Write-Host "Version: $versionClean"
-          Write-Host "`n=== ISS File Content ==="
-          Get-Content "ezSLauncher_setup.iss"
-
-      # Create Windows Installer with Setup Wizard
-      - name: Create Setup Wizard Installer
-        shell: pwsh
-        run: |
-          Write-Host "=== Creating Setup Wizard Installer ==="
-          
-          # Verify ISS file exists
-          if (-not (Test-Path "ezSLauncher_setup.iss")) {
-            Write-Host "✗ ezSLauncher_setup.iss not found"
-            exit 1
-          }
-          
-          Write-Host "✓ ISS file found"
-          
-          # Verify build output exists
-          if (-not (Test-Path "dist/ezSLauncher/ezSLauncher.exe")) {
-            Write-Host "✗ dist/ezSLauncher/ezSLauncher.exe not found"
-            Write-Host "Build output directory contents:"
-            Get-ChildItem "dist" -Recurse | Format-Table FullName
-            exit 1
-          }
-          
-          Write-Host "✓ Build output verified"
-          
-          # List files that will be included
-          Write-Host "`n=== Files to be included in installer ==="
-          Write-Host "Main executable:"
-          Get-Item "dist/ezSLauncher/ezSLauncher.exe" | Format-Table Name, Length
-          
-          Write-Host "`nLanguage file:"
-          if (Test-Path "dist/ezSLauncher/lang_ko.ini") {
-            Get-Item "dist/ezSLauncher/lang_ko.ini" | Format-Table Name, Length
-          } else {
-            Write-Host "⚠ lang_ko.ini not found"
-          }
-          
-          Write-Host "`nIcon folder:"
-          if (Test-Path "dist/ezSLauncher/icon") {
-            Get-ChildItem "dist/ezSLauncher/icon" | Format-Table Name, Length
-          } else {
-            Write-Host "⚠ icon folder not found"
-          }
-          
-          # Compile with Inno Setup
-          $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          
-          if (-not (Test-Path $isccPath)) {
-            Write-Host "✗ Inno Setup compiler not found at: $isccPath"
-            exit 1
-          }
-          
-          Write-Host "`nCompiling installer with Inno Setup..."
-          Write-Host "Compiler: $isccPath"
-          Write-Host "Script: ezSLauncher_setup.iss"
-          Write-Host "Working directory: $PWD"
-          
-          # Run ISCC
-          & $isccPath "ezSLauncher_setup.iss"
-          
-          $exitCode = $LASTEXITCODE
-          Write-Host "ISCC exit code: $exitCode"
-          
-          if ($exitCode -ne 0) {
-            Write-Host "✗ Inno Setup compilation failed with exit code: $exitCode"
-            Write-Host "`n=== Checking for error logs ==="
-            Get-ChildItem -Filter "*.log" | ForEach-Object {
-              Write-Host "`nLog file: $($_.Name)"
-              Get-Content $_.FullName
-            }
-            exit 1
-          }
-          
-          Write-Host "✓ Compilation completed successfully"
-          
-          # Verify output directory
-          if (-not (Test-Path "installer_output")) {
-            Write-Host "⚠ installer_output directory not created"
-            Write-Host "Searching for setup files..."
-            Get-ChildItem -Filter "*.exe" -Recurse | Where-Object { $_.Name -like "*Setup*" } | Format-Table FullName, Length
-            exit 1
-          }
-          
-          # Find setup file
-          $setupFile = Get-ChildItem "installer_output" -Filter "ezSLauncher_Setup_*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          
-          if ($setupFile) {
-            $size = $setupFile.Length / 1MB
-            Write-Host "✓ Setup file created: $($setupFile.Name)"
-            Write-Host "  Size: $([math]::Round($size, 2)) MB"
-            Write-Host "  Path: $($setupFile.FullName)"
             
-            # Copy to root with simpler name
-            Copy-Item $setupFile.FullName -Destination "ezSLauncher_Setup.exe"
-            Write-Host "✓ Copied to: ezSLauncher_Setup.exe"
+            exit 1
+          }
+          
+          Write-Host "✓ NSIS installer created"
+          
+          # Verify installer was created
+          if (Test-Path "ezSLauncher_Setup.exe") {
+            $size = (Get-Item "ezSLauncher_Setup.exe").Length
+            Write-Host "✓ Setup EXE created: $($size / 1MB) MB"
           } else {
-            Write-Host "✗ Setup file not found in installer_output"
-            Write-Host "`nContents of installer_output:"
-            Get-ChildItem "installer_output" | Format-Table Name, Length
+            Write-Host "✗ ezSLauncher_Setup.exe not found"
+            Write-Host "`n=== Checking installer_output directory ==="
+            if (Test-Path "installer_output") {
+              Get-ChildItem "installer_output" | Format-Table Name, Length
+            }
             exit 1
           }
 
@@ -586,10 +469,10 @@ jobs:
           Write-Host "Packaging Portable..."
           Copy-Item "dist/ezSLauncher_Portable.exe" "release/"
           
-          # Copy lang_ko.ini to release folder for portable version
-          if (Test-Path "lang_ko.ini") {
-            Copy-Item "lang_ko.ini" "release/"
-            Write-Host "✓ lang_ko.ini added to portable package"
+          # Copy language folder to release for portable version
+          if (Test-Path "language") {
+            Copy-Item -Path "language" -Destination "release/" -Recurse
+            Write-Host "✓ language folder added to portable package"
           }
           
           if (Test-Path "README.md") { Copy-Item "README.md" "release/README_Portable.txt" }
@@ -603,16 +486,16 @@ jobs:
           
           Files included:
           - ezSLauncher_Portable.exe (main program)
-          - lang_ko.ini (Korean language file - must be in same folder as EXE)
+          - language/lang_ko.ini (Korean language file)
           - README_Portable.txt (this file)
           
           To run:
-          1. Place all files in the same folder
+          1. Place all files in the same folder (maintain language folder structure)
           2. Run ezSLauncher_Portable.exe
           
           Language Support:
           - English is built-in (default)
-          - Korean requires lang_ko.ini file in the same folder as the EXE
+          - Korean requires language/lang_ko.ini file
           - To switch language: Menu → Language → 한국어
           
           For an installer with setup wizard, download ezSLauncher_Setup.exe instead.
@@ -621,11 +504,11 @@ jobs:
           Compress-Archive -Path "release/*" -DestinationPath "ezSLauncher_Portable.zip" -Force
           
           Write-Host "✓ Portable package created"
-          Write-Host "  Contents: ezSLauncher_Portable.exe, lang_ko.ini, README_Portable.txt"
+          Write-Host "  Contents: ezSLauncher_Portable.exe, language folder, README_Portable.txt"
           
           # Package Manual Install version (ZIP)
           Write-Host "Packaging Manual Install ZIP..."
-          Remove-Item "release/*" -Force -ErrorAction SilentlyContinue
+          Remove-Item "release/*" -Force -Recurse -ErrorAction SilentlyContinue
           
           Copy-Item -Path "dist/ezSLauncher/*" -Destination "release/" -Recurse
           if (Test-Path "README.md") { Copy-Item "README.md" "release/README.txt" }
@@ -644,7 +527,7 @@ jobs:
           
           Language Support:
           - English is built-in (default)
-          - Korean requires lang_ko.ini file (included in this package)
+          - Korean requires language/lang_ko.ini file (included in this package)
           - To switch language: Menu → Language → 한국어
           
           For easier installation with setup wizard, download ezSLauncher_Setup.exe instead.
@@ -674,7 +557,7 @@ jobs:
           Write-Host "`n=== Verifying Package Contents ==="
           Write-Host "Portable ZIP contents:"
           Expand-Archive -Path "ezSLauncher_Portable.zip" -DestinationPath "temp_verify_portable" -Force
-          Get-ChildItem "temp_verify_portable" | Format-Table Name, Length
+          Get-ChildItem "temp_verify_portable" -Recurse | Format-Table Name, Length
           Remove-Item -Recurse -Force "temp_verify_portable"
           
           Write-Host "`nManual ZIP contents:"
