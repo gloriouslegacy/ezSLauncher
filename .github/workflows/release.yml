@@ -248,15 +248,33 @@ jobs:
           Write-Host "=== Installing Inno Setup ==="
           
           # Download Inno Setup
-          $innoUrl = "https://jrsoftware.org/download.php/is.exe"
+          $innoUrl = "https://files.jrsoftware.org/is/6/innosetup-6.3.3.exe"
           $innoInstaller = "innosetup-installer.exe"
           
-          Write-Host "Downloading Inno Setup..."
-          Invoke-WebRequest -Uri $innoUrl -OutFile $innoInstaller
+          Write-Host "Downloading Inno Setup from $innoUrl..."
+          try {
+            Invoke-WebRequest -Uri $innoUrl -OutFile $innoInstaller -UseBasicParsing
+            Write-Host "✓ Download completed: $(Get-Item $innoInstaller | Select-Object -ExpandProperty Length) bytes"
+          } catch {
+            Write-Host "✗ Download failed: $($_.Exception.Message)"
+            exit 1
+          }
+          
+          # Verify downloaded file
+          if (-not (Test-Path $innoInstaller)) {
+            Write-Host "✗ Installer file not found"
+            exit 1
+          }
           
           # Install silently
           Write-Host "Installing Inno Setup..."
-          Start-Process -FilePath $innoInstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
+          try {
+            Start-Process -FilePath $innoInstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait -ErrorAction Stop
+            Write-Host "✓ Installation process completed"
+          } catch {
+            Write-Host "✗ Installation process failed: $($_.Exception.Message)"
+            exit 1
+          }
           
           # Verify installation
           $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
