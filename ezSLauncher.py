@@ -1,3 +1,4 @@
+
 """
 File Search & Launcher Application
 Advanced file search with execution capabilities and context menu integration
@@ -11,6 +12,9 @@ import threading
 import re
 import configparser
 import shutil
+import hashlib
+import urllib.request
+import urllib.error
 from pathlib import Path
 from datetime import datetime
 
@@ -44,6 +48,11 @@ def get_config_dir():
 CONFIG_DIR = get_config_dir()
 CONFIG_FILE = os.path.join(CONFIG_DIR, "app_config.json")
 LANG_DIR = "languages"
+
+# Update configuration
+GITHUB_REPO = "gloriouslegacy/ezSLauncher"
+GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+CURRENT_VERSION = "0.0.0"  # Will be updated by version_info.txt during build
 
 def resource_path(relative_path):
     """
@@ -165,6 +174,7 @@ class FileSearchApp:
         "menu_help": "Help",
         "menu_about": "About",
         "menu_github": "Visit GitHub",
+        "menu_check_update": "Check for Updates",
         "search_filters": "Search Filters",
         "name": "Name:",
         "extension": "Extension:",
@@ -260,6 +270,21 @@ class FileSearchApp:
         "move_complete": "Move Complete", 
         "startup_complete": "Startup Registration Complete",
         "skipped": "Skipped",
+        "update_available": "Update Available",
+        "update_available_msg": "New version {0} is available!\nCurrent version: {1}\n\nWould you like to download and install it now?",
+        "no_update": "No Update Available",
+        "no_update_msg": "You are already using the latest version ({0}).",
+        "checking_update": "Checking for updates...",
+        "downloading_update": "Downloading update...",
+        "download_progress": "Downloaded: {0}%",
+        "update_error": "Update Error",
+        "update_error_msg": "Failed to check for updates:\n{0}",
+        "update_complete": "Update Complete",
+        "update_complete_msg": "Update downloaded successfully.\nThe application will now restart to apply the update.",
+        "verifying_checksum": "Verifying file integrity...",
+        "checksum_failed": "Checksum verification failed. Update cancelled.",
+        "creating_backup": "Creating backup...",
+        "backup_failed": "Backup creation failed. Update cancelled.",
         "errors": "Errors",
         "destination": "Destination",
         "open_startup_folder": "Startup Folder",
@@ -464,6 +489,8 @@ class FileSearchApp:
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="HELP", menu=help_menu)
+        help_menu.add_command(label=self.t("menu_check_update"), command=self.check_for_updates)
+        help_menu.add_separator()
         help_menu.add_command(label=self.t("menu_github"), command=self.open_github)
         help_menu.add_separator()
         help_menu.add_command(label=self.t("menu_about"), command=self.show_about)
@@ -2302,6 +2329,242 @@ class FileSearchApp:
         ttk.Label(about_frame, text=self.t("copyright")).pack(pady=(0, 20))
         
         ttk.Button(about_frame, text=self.t("close"), command=about_window.destroy).pack()
+    
+    def check_for_updates(self):
+        """Check for updates from GitHub"""
+        def check_thread():
+            try:
+                self.update_status(self.t("checking_update"))
+                
+                # Get latest release info from GitHub
+                req = urllib.request.Request(GITHUB_API_URL)
+                req.add_header('User-Agent', 'ezSLauncher')
+                
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    data = json.loads(response.read().decode())
+                
+                latest_version = data['tag_name'].lstrip('v')
+                
+                # Compare versions
+                if self.compare_versions(latest_version, CURRENT_VERSION) > 0:
+                    # Update available
+                    self.root.after(0, lambda: self.show_update_dialog(data, latest_version))
+                else:
+                    # Already up to date
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        self.t("no_update"),
+                        self.t("no_update_msg").format(CURRENT_VERSION)
+                    ))
+                    self.update_status(self.t("ready"))
+            
+            except urllib.error.URLError as e:
+                self.root.after(0, lambda: messagebox.showerror(
+                    self.t("update_error"),
+                    self.t("update_error_msg").format(str(e))
+                ))
+                self.update_status(self.t("ready"))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror(
+                    self.t("update_error"),
+                    self.t("update_error_msg").format(str(e))
+                ))
+                self.update_status(self.t("ready"))
+        
+        threading.Thread(target=check_thread, daemon=True).start()
+    
+    def compare_versions(self, v1: str, v2: str) -> int:
+        """Compare two version strings. Returns: 1 if v1 > v2, 0 if equal, -1 if v1 < v2"""
+        def normalize(v):
+            parts = []
+            for part in v.split('.'):
+                # Extract numeric part only
+                match = re.match(r'(\d+)', part)
+                if match:
+                    parts.append(int(match.group(1)))
+            return parts
+        
+        v1_parts = normalize(v1)
+        v2_parts = normalize(v2)
+        
+        # Pad with zeros
+        max_len = max(len(v1_parts), len(v2_parts))
+        v1_parts.extend([0] * (max_len - len(v1_parts)))
+        v2_parts.extend([0] * (max_len - len(v2_parts)))
+        
+        for p1, p2 in zip(v1_parts, v2_parts):
+            if p1 > p2:
+                return 1
+            elif p1 < p2:
+                return -1
+        return 0
+    
+    def show_update_dialog(self, release_data, latest_version):
+        """Show update available dialog"""
+        result = messagebox.askyesno(
+            self.t("update_available"),
+            self.t("update_available_msg").format(latest_version, CURRENT_VERSION)
+        )
+        
+        if result:
+            self.download_and_install_update(release_data)
+        else:
+            self.update_status(self.t("ready"))
+    
+    def download_and_install_update(self, release_data):
+        """Download and install update"""
+        def download_thread():
+            try:
+                # Determine which asset to download
+                assets = release_data.get('assets', [])
+                
+                # Check if running from portable or installed version
+                is_portable = getattr(sys, 'frozen', False) and '_MEIPASS' in dir(sys)
+                is_installer = not is_portable and getattr(sys, 'frozen', False)
+                
+                download_url = None
+                asset_name = None
+                sha256_sum = None
+                
+                # Look for appropriate download
+                if is_portable:
+                    # Look for portable zip
+                    for asset in assets:
+                        if 'Portable.zip' in asset['name']:
+                            download_url = asset['browser_download_url']
+                            asset_name = asset['name']
+                            break
+                else:
+                    # Look for setup installer
+                    for asset in assets:
+                        if 'Setup.exe' in asset['name']:
+                            download_url = asset['browser_download_url']
+                            asset_name = asset['name']
+                            break
+                
+                if not download_url:
+                    raise Exception("Could not find appropriate update file")
+                
+                # Get SHA256 from release body if available
+                body = release_data.get('body', '')
+                sha_match = re.search(r'SHA256:\s*`?([a-fA-F0-9]{64})`?', body)
+                if sha_match:
+                    sha256_sum = sha_match.group(1).lower()
+                
+                # Download file
+                self.update_status(self.t("downloading_update"))
+                download_path = os.path.join(CONFIG_DIR, asset_name)
+                
+                def reporthook(block_num, block_size, total_size):
+                    if total_size > 0:
+                        percent = min(100, int(block_num * block_size * 100 / total_size))
+                        self.root.after(0, lambda: self.update_status(
+                            self.t("download_progress").format(percent)
+                        ))
+                
+                urllib.request.urlretrieve(download_url, download_path, reporthook=reporthook)
+                
+                # Verify checksum if available
+                if sha256_sum:
+                    self.update_status(self.t("verifying_checksum"))
+                    file_hash = self.calculate_sha256(download_path)
+                    
+                    if file_hash != sha256_sum:
+                        os.remove(download_path)
+                        raise Exception(self.t("checksum_failed"))
+                
+                # Create backup
+                self.update_status(self.t("creating_backup"))
+                if not self.create_backup():
+                    os.remove(download_path)
+                    raise Exception(self.t("backup_failed"))
+                
+                # Install update
+                self.root.after(0, lambda: self.install_update(download_path, is_portable))
+                
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror(
+                    self.t("update_error"),
+                    self.t("update_error_msg").format(str(e))
+                ))
+                self.update_status(self.t("ready"))
+        
+        threading.Thread(target=download_thread, daemon=True).start()
+    
+    def calculate_sha256(self, filepath):
+        """Calculate SHA256 hash of file"""
+        sha256_hash = hashlib.sha256()
+        with open(filepath, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+    
+    def create_backup(self):
+        """Create backup of current executable and config"""
+        try:
+            backup_dir = os.path.join(CONFIG_DIR, "backup")
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            # Backup executable
+            if getattr(sys, 'frozen', False):
+                exe_path = sys.executable
+                exe_name = os.path.basename(exe_path)
+                backup_exe = os.path.join(backup_dir, exe_name)
+                shutil.copy2(exe_path, backup_exe)
+            
+            # Config is already in CONFIG_DIR, no need to backup
+            
+            return True
+        except Exception as e:
+            print(f"Backup failed: {e}")
+            return False
+    
+    def install_update(self, update_path, is_portable):
+        """Install the downloaded update"""
+        try:
+            if is_portable:
+                # For portable, use updater.exe
+                exe_dir = os.path.dirname(sys.executable)
+                exe_name = os.path.basename(sys.executable)
+                
+                # Look for updater.exe in same directory
+                updater_path = os.path.join(exe_dir, "updater.exe")
+                
+                if not os.path.exists(updater_path):
+                    # Fallback to old method if updater.exe not found
+                    raise Exception("updater.exe not found. Please download the complete package.")
+                
+                # Launch updater.exe with arguments
+                # updater.exe <update_file> <target_dir> <exe_name>
+                subprocess.Popen(
+                    [updater_path, update_path, exe_dir, exe_name],
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+                )
+                
+                messagebox.showinfo(
+                    self.t("update_complete"),
+                    "Update will be installed after the application closes.\nThe application will restart automatically."
+                )
+                
+                # Close application
+                self.root.quit()
+                
+            else:
+                # For installer, run the setup with silent flag
+                subprocess.Popen([update_path, '/VERYSILENT', '/NORESTART'])
+                
+                messagebox.showinfo(
+                    self.t("update_complete"),
+                    self.t("update_complete_msg")
+                )
+                
+                self.root.quit()
+                
+        except Exception as e:
+            messagebox.showerror(
+                self.t("update_error"),
+                self.t("update_error_msg").format(str(e))
+            )
+            self.update_status(self.t("ready"))
     
     def schedule_save_settings(self):
         """Schedule save settings with debounce (wait 500ms after last change)"""
