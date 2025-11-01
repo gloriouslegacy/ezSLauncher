@@ -1,4 +1,3 @@
-
 """
 File Search & Launcher Application
 Advanced file search with execution capabilities and context menu integration
@@ -280,7 +279,7 @@ class FileSearchApp:
         "update_error": "Update Error",
         "update_error_msg": "Failed to check for updates:\n{0}",
         "update_complete": "Update Complete",
-        "update_complete_msg": "Update downloaded successfully.\nThe application will now restart to apply the update.",
+        "update_complete_msg": "Update downloaded successfully.\nThe application will restart automatically after installation is complete.",
         "verifying_checksum": "Verifying file integrity...",
         "checksum_failed": "Checksum verification failed. Update cancelled.",
         "creating_backup": "Creating backup...",
@@ -380,6 +379,9 @@ class FileSearchApp:
         
         # Apply initial theme
         self.apply_theme()
+        
+        # Check for updates on startup (after 3 seconds delay)
+        self.root.after(3000, self.check_for_updates_silent)
     
     def load_language_file(self, lang_name: str):
         """Load translations from INI file (legacy method)"""
@@ -2372,6 +2374,31 @@ class FileSearchApp:
         
         threading.Thread(target=check_thread, daemon=True).start()
     
+    def check_for_updates_silent(self):
+        """Check for updates silently on startup (no error messages)"""
+        def check_thread():
+            try:
+                # Get latest release info from GitHub
+                req = urllib.request.Request(GITHUB_API_URL)
+                req.add_header('User-Agent', 'ezSLauncher')
+                
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    data = json.loads(response.read().decode())
+                
+                latest_version = data['tag_name'].lstrip('v')
+                
+                # Compare versions
+                if self.compare_versions(latest_version, CURRENT_VERSION) > 0:
+                    # Update available - show dialog
+                    self.root.after(0, lambda: self.show_update_dialog(data, latest_version))
+                # If no update or error, do nothing (silent)
+            
+            except:
+                # Silent failure - don't show error on startup
+                pass
+        
+        threading.Thread(target=check_thread, daemon=True).start()
+    
     def compare_versions(self, v1: str, v2: str) -> int:
         """Compare two version strings. Returns: 1 if v1 > v2, 0 if equal, -1 if v1 < v2"""
         def normalize(v):
@@ -2417,9 +2444,11 @@ class FileSearchApp:
                 # Determine which asset to download
                 assets = release_data.get('assets', [])
                 
-                # Check if running from portable or installed version
-                is_portable = getattr(sys, 'frozen', False) and '_MEIPASS' in dir(sys)
-                is_installer = not is_portable and getattr(sys, 'frozen', False)
+                # Detect installation type
+                # Portable: executable name contains "Portable"
+                # Installer: installed via setup (check for uninstall registry or specific paths)
+                exe_name = os.path.basename(sys.executable) if getattr(sys, 'frozen', False) else ""
+                is_portable = 'Portable' in exe_name
                 
                 download_url = None
                 asset_name = None
@@ -2434,7 +2463,7 @@ class FileSearchApp:
                             asset_name = asset['name']
                             break
                 else:
-                    # Look for setup installer
+                    # Look for setup installer (for both installed and manual versions)
                     for asset in assets:
                         if 'Setup.exe' in asset['name']:
                             download_url = asset['browser_download_url']
@@ -2444,11 +2473,19 @@ class FileSearchApp:
                 if not download_url:
                     raise Exception("Could not find appropriate update file")
                 
-                # Get SHA256 from release body if available
+                # Get SHA256 from release body
                 body = release_data.get('body', '')
-                sha_match = re.search(r'SHA256:\s*`?([a-fA-F0-9]{64})`?', body)
+                
+                # Different SHA256 patterns for different file types
+                if is_portable:
+                    # Look for Portable Version SHA256
+                    sha_match = re.search(r'\*\*Portable Version.*?```\s*([a-fA-F0-9]{64})\s*```', body, re.DOTALL)
+                else:
+                    # Look for Installer Version SHA256
+                    sha_match = re.search(r'\*\*Installer Version.*?```\s*([a-fA-F0-9]{64})\s*```', body, re.DOTALL)
+                
                 if sha_match:
-                    sha256_sum = sha_match.group(1).lower()
+                    sha256_sum = sha_match.group(1).strip().lower()
                 
                 # Download file
                 self.update_status(self.t("downloading_update"))
@@ -2530,8 +2567,18 @@ class FileSearchApp:
                 updater_path = os.path.join(exe_dir, "updater.exe")
                 
                 if not os.path.exists(updater_path):
-                    # Fallback to old method if updater.exe not found
-                    raise Exception("updater.exe not found. Please download the complete package.")
+                    # Fallback: try to extract updater from zip
+                    import zipfile
+                    try:
+                        with zipfile.ZipFile(update_path, 'r') as zip_ref:
+                            # Check if updater.exe is in the zip
+                            if 'updater.exe' in zip_ref.namelist():
+                                zip_ref.extract('updater.exe', exe_dir)
+                                updater_path = os.path.join(exe_dir, "updater.exe")
+                            else:
+                                raise Exception("updater.exe not found in update package")
+                    except Exception as e:
+                        raise Exception(f"updater.exe not found. Please download the complete package.\nError: {str(e)}")
                 
                 # Launch updater.exe with arguments
                 # updater.exe <update_file> <target_dir> <exe_name>
@@ -2549,8 +2596,47 @@ class FileSearchApp:
                 self.root.quit()
                 
             else:
-                # For installer, run the setup with silent flag
-                subprocess.Popen([update_path, '/VERYSILENT', '/NORESTART'])
+                # For installer/manual versions:
+                # 1. Download Setup.exe
+                # 2. Create a batch file to wait for setup completion and restart app
+                # 3. Run Setup.exe with /VERYSILENT flag
+                # 4. Batch file will restart the application automatically
+                
+                # Get installation path (try to detect from registry or use current location)
+                exe_path = sys.executable if getattr(sys, 'frozen', False) else None
+                
+                if exe_path:
+                    # Create auto-restart batch file
+                    restart_script = os.path.join(CONFIG_DIR, "restart_after_update.bat")
+                    
+                    script_content = f"""@echo off
+echo Waiting for installer to complete...
+:WAIT
+timeout /t 2 /nobreak > nul
+tasklist /FI "IMAGENAME eq {os.path.basename(update_path)}" 2>NUL | find /I /N "{os.path.basename(update_path)}">NUL
+if "%ERRORLEVEL%"=="0" goto WAIT
+
+echo Starting application...
+timeout /t 1 /nobreak > nul
+start "" "{exe_path}"
+
+echo Cleaning up...
+del "{update_path}"
+del "%~f0"
+"""
+                    
+                    with open(restart_script, 'w') as f:
+                        f.write(script_content)
+                    
+                    # Run setup
+                    subprocess.Popen([update_path, '/VERYSILENT', '/NORESTART'])
+                    
+                    # Run restart script
+                    subprocess.Popen(['cmd', '/c', restart_script], 
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
+                else:
+                    # Fallback: just run setup without auto-restart
+                    subprocess.Popen([update_path, '/VERYSILENT', '/NORESTART'])
                 
                 messagebox.showinfo(
                     self.t("update_complete"),
