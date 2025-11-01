@@ -428,8 +428,8 @@ jobs:
             "; Main executable",
             "Source: `"dist\ezSLauncher\ezSLauncher.exe`"; DestDir: `"{app}`"; Flags: ignoreversion",
             "",
-            "; Language file (optional)",
-            "Source: `"dist\ezSLauncher\language\lang_ko.ini`"; DestDir: `"{app}\language`"; Flags: ignoreversion skipifsourcedoesntexist",
+            "; Language folder (optional - all language files)",
+            "Source: `"dist\ezSLauncher\language\*`"; DestDir: `"{app}\language`"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist",
             "",
             "; Icon folder (optional)",
             "Source: `"dist\ezSLauncher\icon\*`"; DestDir: `"{app}\icon`"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist",
@@ -653,10 +653,10 @@ jobs:
             Write-Host "✓ updater.exe added to portable package"
           }
           
-          # Copy lang_ko.ini to release folder for portable version
-          if (Test-Path "language/lang_ko.ini") {
-            Copy-Item "language/lang_ko.ini" "release/"
-            Write-Host "✓ lang_ko.ini added to portable package"
+          # Copy language folder to release folder for portable version
+          if (Test-Path "language") {
+            Copy-Item "language" "release/" -Recurse
+            Write-Host "✓ language folder added to portable package"
           }
           
           if (Test-Path "README.md") { Copy-Item "README.md" "release/README_Portable.txt" }
@@ -671,7 +671,7 @@ jobs:
           Files included:
           - ezSLauncher_Portable.exe (main program)
           - updater.exe (automatic update helper)
-          - lang_ko.ini (Korean language file - must be in same folder as EXE)
+          - language/ folder (language files)
           - README_Portable.txt (this file)
           
           To run:
@@ -680,7 +680,7 @@ jobs:
           
           Language Support:
           - English is built-in (default)
-          - Korean requires lang_ko.ini file in the same folder as the EXE
+          - Korean requires language folder in the same folder as the EXE
           - To switch language: Menu → Language → 한국어
           
           For an installer with setup wizard, download ezSLauncher_Setup.exe instead.
@@ -689,7 +689,7 @@ jobs:
           Compress-Archive -Path "release/*" -DestinationPath "ezSLauncher_Portable.zip" -Force
           
           Write-Host "✓ Portable package created"
-          Write-Host "  Contents: ezSLauncher_Portable.exe, lang_ko.ini, README_Portable.txt"
+          Write-Host "  Contents: ezSLauncher_Portable.exe, updater.exe, language folder, README_Portable.txt"
           
           # Package Manual Install version (ZIP)
           Write-Host "Packaging Manual Install ZIP..."
