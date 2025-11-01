@@ -693,7 +693,8 @@ jobs:
           
           # Package Manual Install version (ZIP)
           Write-Host "Packaging Manual Install ZIP..."
-          Remove-Item "release/*" -Force -ErrorAction SilentlyContinue
+          Remove-Item "release" -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path "release" | Out-Null
           
           Copy-Item -Path "dist/ezSLauncher/*" -Destination "release/" -Recurse
           if (Test-Path "README.md") { Copy-Item "README.md" "release/README.txt" }
