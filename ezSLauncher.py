@@ -2322,7 +2322,7 @@ class FileSearchApp:
     def open_github(self):
         """Open GitHub repository"""
         import webbrowser
-        webbrowser.open("https://github.com/gloriouslegacy")
+        webbrowser.open("https://github.com/gloriouslegacy/ezSLauncher/releases")
         self.update_status(self.t("opening_github"))
     
     def show_about(self):
