@@ -388,43 +388,36 @@ class FileSearchApp:
         # Convert display name to code
         lang_code = lang_name.lower()[:2]
         return self.load_language_file_by_code(lang_code)
-    
+
     def load_language_file_by_code(self, lang_code: str):
         """Load translations from INI file by language code"""
         lang_file = f"lang_{lang_code}.ini"
         
-        # Try multiple locations
-        # 1. PyInstaller bundled resources (_MEIPASS)
-        lang_path = resource_path(os.path.join("language", lang_file))
+        # Try multiple paths
+        paths_to_try = [
+            # 1. PyInstaller bundled resource (for frozen exe)
+            resource_path(os.path.join("language", lang_file)),
+            # 2. Next to script (for development)
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "language", lang_file),
+            # 3. Current directory (for development)
+            os.path.join(os.getcwd(), "language", lang_file),
+        ]
         
-        if os.path.exists(lang_path):
-            try:
-                config = configparser.ConfigParser()
-                config.read(lang_path, encoding='utf-8')
-                
-                if 'UI' in config:
-                    for key in config['UI']:
-                        self.translations[key] = config['UI'][key]
-                return True
-            except Exception as e:
-                print(f"Error loading from bundled resources: {e}")
-        
-        # 2. Next to executable (for installed versions)
-        if getattr(sys, 'frozen', False):
-            exe_dir = os.path.dirname(sys.executable)
-            lang_path = os.path.join(exe_dir, "language", lang_file)
-            
+        for lang_path in paths_to_try:
             if os.path.exists(lang_path):
                 try:
-                    config = configparser.ConfigParser()
+                    config = configparser.ConfigParser(interpolation=None)
                     config.read(lang_path, encoding='utf-8')
                     
                     if 'UI' in config:
                         for key in config['UI']:
                             self.translations[key] = config['UI'][key]
-                    return True
+                        return True
+                    else:
+                        continue
                 except Exception as e:
-                    print(f"Error loading from exe directory: {e}")
+                    print(f"Error reading {lang_path}: {e}")
+                    continue
         
         return False
     
@@ -2254,7 +2247,7 @@ class FileSearchApp:
         # Try to load language file
         success = False
         lang_file = f"lang_{lang_code}.ini"
-        lang_path = resource_path(lang_file)
+        lang_path = resource_path(os.path.join("language", lang_file))
         
         if lang_code != "en":
             success = self.load_language_file_by_code(lang_code)
