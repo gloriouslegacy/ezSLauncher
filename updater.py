@@ -63,54 +63,90 @@ def install_portable_update(zip_file, target_dir, exe_name):
         with zipfile.ZipFile(zip_file, 'r') as zip_ref:
             zip_ref.extractall(temp_dir)
         
-        # Find the executable in extracted files
-        exe_found = False
+        # Debug: List all extracted files
+        print(f"\nExtracted files:")
         for root, dirs, files in os.walk(temp_dir):
-            if exe_name in files:
-                source_file = os.path.join(root, exe_name)
-                target_file = os.path.join(target_dir, exe_name)
-                
-                # Backup old executable
-                backup_file = target_file + ".backup"
-                if os.path.exists(target_file):
-                    print(f"Creating backup: {backup_file}")
-                    shutil.copy2(target_file, backup_file)
-                
-                # Replace executable
-                print(f"Replacing {exe_name}...")
-                shutil.copy2(source_file, target_file)
-                exe_found = True
-                
-                # Copy language folder if exists
-                lang_source = os.path.join(root, "language")
-                lang_target = os.path.join(target_dir, "language")
-                if os.path.exists(lang_source):
-                    print("Updating language files...")
-                    if os.path.exists(lang_target):
-                        shutil.rmtree(lang_target)
-                    shutil.copytree(lang_source, lang_target)
-                
-                # Copy other files (excluding config)
-                for item in os.listdir(root):
-                    item_path = os.path.join(root, item)
-                    target_path = os.path.join(target_dir, item)
+            for file in files:
+                rel_path = os.path.relpath(os.path.join(root, file), temp_dir)
+                print(f"  {rel_path}")
+        print("")
+        
+        # Find the portable executable in extracted files
+        # ZIP structure: ezSLauncher_Portable.exe, updater.exe, language/lang_ko.ini, etc.
+        exe_found = False
+        portable_exe = None
+        
+        # First, look for any .exe file that matches the pattern
+        for root, dirs, files in os.walk(temp_dir):
+            for file in files:
+                if file.endswith('.exe') and 'Portable' in file:
+                    portable_exe = file
+                    source_file = os.path.join(root, file)
+                    target_file = os.path.join(target_dir, exe_name)
                     
-                    # Skip executable (already copied), language folder, and config files
-                    if item == exe_name or item == "language" or item.endswith('.json'):
-                        continue
+                    print(f"Found portable executable: {file}")
                     
-                    if os.path.isfile(item_path):
-                        print(f"Copying {item}...")
-                        shutil.copy2(item_path, target_path)
-                    elif os.path.isdir(item_path):
-                        if os.path.exists(target_path):
-                            shutil.rmtree(target_path)
-                        shutil.copytree(item_path, target_path)
-                
+                    # Backup old executable
+                    backup_file = target_file + ".backup"
+                    if os.path.exists(target_file):
+                        print(f"Creating backup: {backup_file}")
+                        shutil.copy2(target_file, backup_file)
+                    
+                    # Replace executable
+                    print(f"Replacing {exe_name} with {file}...")
+                    shutil.copy2(source_file, target_file)
+                    exe_found = True
+                    
+                    # Copy language folder if exists
+                    lang_source = os.path.join(temp_dir, "language")
+                    lang_target = os.path.join(target_dir, "language")
+                    if os.path.exists(lang_source):
+                        print("Updating language files...")
+                        if os.path.exists(lang_target):
+                            shutil.rmtree(lang_target)
+                        shutil.copytree(lang_source, lang_target)
+                    
+                    # Copy updater.exe if exists
+                    updater_source = os.path.join(temp_dir, "updater.exe")
+                    updater_target = os.path.join(target_dir, "updater.exe")
+                    if os.path.exists(updater_source) and updater_source != sys.executable:
+                        print("Updating updater.exe...")
+                        # Can't update self, will be updated on next update
+                        try:
+                            shutil.copy2(updater_source, updater_target + ".new")
+                            print("updater.exe will be updated on next run")
+                        except:
+                            pass
+                    
+                    # Copy other files at root level (excluding config)
+                    for item in os.listdir(temp_dir):
+                        item_path = os.path.join(temp_dir, item)
+                        target_path = os.path.join(target_dir, item)
+                        
+                        # Skip executable, updater, language folder, and config files
+                        if (item.endswith('.exe') or 
+                            item == "language" or 
+                            item.endswith('.json') or
+                            item == "update_temp"):
+                            continue
+                        
+                        if os.path.isfile(item_path):
+                            print(f"Copying {item}...")
+                            shutil.copy2(item_path, target_path)
+                        elif os.path.isdir(item_path):
+                            if os.path.exists(target_path):
+                                shutil.rmtree(target_path)
+                            shutil.copytree(item_path, target_path)
+                    
+                    break
+            
+            if exe_found:
                 break
         
         if not exe_found:
-            raise Exception(f"Executable {exe_name} not found in update package")
+            print(f"ERROR: Portable executable not found in update package")
+            print(f"Looking for .exe files with 'Portable' in the name")
+            raise Exception(f"Portable executable not found in update package")
         
         # Clean up
         print("Cleaning up...")
