@@ -393,19 +393,27 @@ class FileSearchApp:
         """Load translations from INI file by language code"""
         lang_file = f"lang_{lang_code}.ini"
         
-        # Try multiple possible locations
-        possible_paths = [
-            # 1. Next to executable (for portable and installed)
-            os.path.join(os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__), "language", lang_file),
-            # 2. PyInstaller _MEIPASS (runtime temp location)
-            resource_path(os.path.join("language", lang_file)),
-            # 3. Current directory
-            os.path.join("language", lang_file),
-            # 4. Script directory (for development)
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "language", lang_file)
-        ]
+        # Try multiple locations
+        # 1. PyInstaller bundled resources (_MEIPASS)
+        lang_path = resource_path(os.path.join("language", lang_file))
         
-        for lang_path in possible_paths:
+        if os.path.exists(lang_path):
+            try:
+                config = configparser.ConfigParser()
+                config.read(lang_path, encoding='utf-8')
+                
+                if 'UI' in config:
+                    for key in config['UI']:
+                        self.translations[key] = config['UI'][key]
+                return True
+            except Exception as e:
+                print(f"Error loading from bundled resources: {e}")
+        
+        # 2. Next to executable (for installed versions)
+        if getattr(sys, 'frozen', False):
+            exe_dir = os.path.dirname(sys.executable)
+            lang_path = os.path.join(exe_dir, "language", lang_file)
+            
             if os.path.exists(lang_path):
                 try:
                     config = configparser.ConfigParser()
@@ -416,25 +424,7 @@ class FileSearchApp:
                             self.translations[key] = config['UI'][key]
                     return True
                 except Exception as e:
-                    print(f"Error loading {lang_path}: {e}")
-                    continue
-        
-        # Show error dialog if language file not found
-        if lang_code != "en":  # Don't show error for English (built-in)
-            exe_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
-            current_dir = os.getcwd()
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            
-            error_msg = f"Failed to load language file for {lang_code}.\n\n"
-            error_msg += f"Looking for: {lang_file}\n"
-            error_msg += f"Search path: {possible_paths[0]}\n"
-            error_msg += f"File exists: {os.path.exists(possible_paths[0])}\n\n"
-            error_msg += f"Please place the language file in the same folder as the program.\n\n"
-            error_msg += f"Current directory: {current_dir}\n"
-            error_msg += f"Executable directory: {exe_dir}\n"
-            error_msg += f"Script directory: {script_dir}"
-            
-            messagebox.showerror("Language Error", error_msg)
+                    print(f"Error loading from exe directory: {e}")
         
         return False
     
