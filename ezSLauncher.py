@@ -1796,10 +1796,10 @@ class FileSearchApp:
             btn_frame = ttk.Frame(frame)
             btn_frame.pack(fill=tk.X)
             
-            ok_btn = ttk.Button(btn_frame, text="OK", command=on_ok, width=12)
+            ok_btn = ttk.Button(btn_frame, text=self.t("ok"), command=on_ok, width=12)
             ok_btn.pack(side=tk.RIGHT, padx=(5, 0))
             
-            cancel_btn = ttk.Button(btn_frame, text=self.t("close"), command=on_cancel, width=12)
+            cancel_btn = ttk.Button(btn_frame, text=self.t("cancel"), command=on_cancel, width=12)
             cancel_btn.pack(side=tk.RIGHT)
             
             # Bind keys
