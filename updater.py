@@ -53,166 +53,111 @@ def main():
 
 def install_portable_update(zip_file, target_dir, exe_name):
     """Install portable version from zip"""
-    temp_dir = os.path.join(os.path.dirname(zip_file), "update_temp")
+    extract_dir = os.path.join(os.path.dirname(zip_file), "extracted")
     
     try:
         # Extract zip to temp directory
         print("Extracting update...")
-        os.makedirs(temp_dir, exist_ok=True)
+        if os.path.exists(extract_dir):
+            shutil.rmtree(extract_dir)
+        os.makedirs(extract_dir, exist_ok=True)
         
         with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
+            zip_ref.extractall(extract_dir)
         
-        # Debug: List all extracted files
-        print(f"\n=== Extracted files ===")
-        for root, dirs, files in os.walk(temp_dir):
-            for file in files:
-                rel_path = os.path.relpath(os.path.join(root, file), temp_dir)
-                print(f"  {rel_path}")
-        print("")
+        print(f"✓ Extraction complete")
         
-        # Find the portable executable in extracted files
-        exe_found = False
-        portable_exe = None
+        # Find the executable in extracted files
+        # Priority: 1) Exact match, 2) Any .exe with 'Portable' in name, 3) First .exe found
+        new_exe = None
+        found_exe_name = None
         
-        print(f"Looking for portable executable (target: {exe_name})...")
-        
-        # Search in all directories
-        for root, dirs, files in os.walk(temp_dir):
-            print(f"Checking directory: {root}")
-            for file in files:
-                print(f"  Found file: {file}")
-                
-                # Look for portable executable
-                # Case 1: Exact match with current exe name
-                if file == exe_name:
-                    portable_exe = file
-                    source_file = os.path.join(root, file)
-                    print(f"✓ Found exact match: {file}")
-                # Case 2: Any .exe with 'Portable' in name
-                elif file.endswith('.exe') and 'Portable' in file:
-                    portable_exe = file
-                    source_file = os.path.join(root, file)
-                    print(f"✓ Found portable exe: {file}")
-                
-                # If we found an exe, process it
-                if portable_exe:
-                    target_file = os.path.join(target_dir, exe_name)
-                    
-                    print(f"\n=== Starting Update ===")
-                    print(f"Source: {source_file}")
-                    print(f"Target: {target_file}")
-                    
-                    # Backup old executable
-                    backup_file = target_file + ".backup"
-                    if os.path.exists(target_file):
-                        print(f"Creating backup: {backup_file}")
-                        try:
-                            # Force close if file is locked
-                            if os.path.exists(backup_file):
-                                os.remove(backup_file)
-                            shutil.copy2(target_file, backup_file)
-                            print(f"✓ Backup created")
-                        except Exception as e:
-                            print(f"Warning: Could not create backup: {e}")
-                    
-                    # Replace executable
-                    print(f"Replacing {exe_name}...")
-                    try:
-                        # Remove target if exists
-                        if os.path.exists(target_file):
-                            os.remove(target_file)
-                        shutil.copy2(source_file, target_file)
-                        print(f"✓ Successfully replaced executable")
-                        exe_found = True
-                    except Exception as e:
-                        print(f"✗ Failed to replace executable: {e}")
-                        raise e
-                    
-                    # Copy language folder
-                    lang_source = os.path.join(temp_dir, "language")
-                    lang_target = os.path.join(target_dir, "language")
-                    if os.path.exists(lang_source):
-                        print(f"Updating language folder...")
-                        try:
-                            if os.path.exists(lang_target):
-                                shutil.rmtree(lang_target)
-                            shutil.copytree(lang_source, lang_target)
-                            print(f"✓ Language files updated")
-                        except Exception as e:
-                            print(f"Warning: Could not update language files: {e}")
-                    
-                    # Copy updater.exe if exists and not self
-                    updater_source = os.path.join(temp_dir, "updater.exe")
-                    if os.path.exists(updater_source):
-                        updater_target = os.path.join(target_dir, "updater.exe")
-                        current_updater = os.path.abspath(sys.executable)
-                        
-                        # Don't try to update self
-                        if os.path.abspath(updater_target) != current_updater:
-                            print(f"Updating updater.exe...")
-                            try:
-                                if os.path.exists(updater_target):
-                                    os.remove(updater_target)
-                                shutil.copy2(updater_source, updater_target)
-                                print(f"✓ Updater updated")
-                            except Exception as e:
-                                print(f"Warning: Could not update updater: {e}")
-                        else:
-                            print(f"Skipping updater.exe (currently running)")
-                    
-                    # Copy other files at root level (excluding config)
-                    print(f"Copying additional files...")
-                    for item in os.listdir(temp_dir):
-                        item_path = os.path.join(temp_dir, item)
-                        target_path = os.path.join(target_dir, item)
-                        
-                        # Skip executable, updater, language folder, temp dirs, and config files
-                        if (item.endswith('.exe') or 
-                            item == "language" or 
-                            item.endswith('.json') or
-                            item == "update_temp" or
-                            item.startswith('.')):
-                            continue
-                        
-                        try:
-                            if os.path.isfile(item_path):
-                                print(f"  Copying {item}...")
-                                shutil.copy2(item_path, target_path)
-                            elif os.path.isdir(item_path):
-                                print(f"  Copying directory {item}...")
-                                if os.path.exists(target_path):
-                                    shutil.rmtree(target_path)
-                                shutil.copytree(item_path, target_path)
-                        except Exception as e:
-                            print(f"  Warning: Could not copy {item}: {e}")
-                    
-                    break
-            
-            if exe_found:
+        # First pass: Look for exact match or Portable exe
+        for item in os.listdir(extract_dir):
+            if item == exe_name:
+                new_exe = os.path.join(extract_dir, item)
+                found_exe_name = item
+                print(f"✓ Found exact match: {item}")
+                break
+            elif item.endswith('.exe') and 'Portable' in item:
+                new_exe = os.path.join(extract_dir, item)
+                found_exe_name = item
+                print(f"✓ Found portable exe: {item}")
                 break
         
-        if not exe_found:
-            print(f"\n✗ ERROR: Could not find portable executable")
-            print(f"Expected: {exe_name}")
-            print(f"Searched in: {temp_dir}")
-            raise Exception(f"Portable executable not found in update package")
+        # Second pass: If no portable exe found, take first .exe
+        if not new_exe:
+            for item in os.listdir(extract_dir):
+                if item.endswith('.exe') and item != 'updater.exe':
+                    new_exe = os.path.join(extract_dir, item)
+                    found_exe_name = item
+                    print(f"✓ Found exe: {item}")
+                    break
+        
+        if not new_exe or not os.path.exists(new_exe):
+            raise Exception(f"Could not find any executable in update package")
+        
+        # Backup current executable
+        target_file = os.path.join(target_dir, exe_name)
+        backup_file = target_file + ".backup"
+        
+        print("Creating backup...")
+        if os.path.exists(target_file):
+            if os.path.exists(backup_file):
+                os.remove(backup_file)
+            shutil.copy2(target_file, backup_file)
+            print(f"✓ Backup created")
+        
+        # Replace executable
+        print(f"Replacing {exe_name}...")
+        if os.path.exists(target_file):
+            os.remove(target_file)
+        shutil.copy2(new_exe, target_file)
+        print(f"✓ Successfully replaced executable")
+        
+        # Copy language folder if exists
+        lang_source = os.path.join(extract_dir, "language")
+        lang_target = os.path.join(target_dir, "language")
+        if os.path.exists(lang_source):
+            print("Updating language folder...")
+            if os.path.exists(lang_target):
+                shutil.rmtree(lang_target)
+            shutil.copytree(lang_source, lang_target)
+            print(f"✓ Language files updated")
+        
+        # Copy updater.exe if exists and not self
+        updater_source = os.path.join(extract_dir, "updater.exe")
+        if os.path.exists(updater_source):
+            updater_target = os.path.join(target_dir, "updater.exe")
+            current_updater = os.path.abspath(sys.executable)
+            
+            # Don't try to update self
+            if os.path.abspath(updater_target) != current_updater:
+                print("Updating updater.exe...")
+                if os.path.exists(updater_target):
+                    os.remove(updater_target)
+                shutil.copy2(updater_source, updater_target)
+                print(f"✓ Updater updated")
+            else:
+                print("Skipping updater.exe (currently running)")
         
         # Clean up
         print("\n=== Cleaning up ===")
         print("Removing temp directory...")
-        shutil.rmtree(temp_dir)
+        if os.path.exists(extract_dir):
+            shutil.rmtree(extract_dir)
         print("Removing update file...")
-        os.remove(zip_file)
+        if os.path.exists(zip_file):
+            os.remove(zip_file)
         print("✓ Cleanup complete")
         
         # Restart application
         print("\n=== Restarting application ===")
-        print("Waiting 1 second...")
-        time.sleep(1)
+        print("Waiting 2 seconds...")
+        time.sleep(2)
         exe_path = os.path.join(target_dir, exe_name)
         print(f"Starting: {exe_path}")
-        subprocess.Popen([exe_path], cwd=target_dir)
+        subprocess.Popen([exe_path], cwd=target_dir, shell=False)
         print("✓ Application started")
         
     except Exception as e:
@@ -224,8 +169,12 @@ def install_portable_update(zip_file, target_dir, exe_name):
         if os.path.exists(backup_file):
             print("Restoring backup due to error...")
             try:
+                if os.path.exists(target_file):
+                    os.remove(target_file)
                 shutil.copy2(backup_file, target_file)
                 print("✓ Backup restored")
+                # Restart original version
+                subprocess.Popen([target_file], cwd=target_dir, shell=False)
             except Exception as restore_error:
                 print(f"✗ Could not restore backup: {restore_error}")
         
