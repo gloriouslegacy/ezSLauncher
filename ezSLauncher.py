@@ -2411,29 +2411,18 @@ class FileSearchApp:
         threading.Thread(target=check_thread, daemon=True).start()
     
     def compare_versions(self, v1: str, v2: str) -> int:
-        """Compare two version strings. Returns: 1 if v1 > v2, 0 if equal, -1 if v1 < v2"""
-        def normalize(v):
-            parts = []
-            for part in v.split('.'):
-                # Extract numeric part only
-                match = re.search(r'(\d+)', part)
-                if match:
-                    parts.append(int(match.group(1)))
-            return parts
+        """Compare two version strings using string comparison.
+        This ensures v0.2.9 > v0.2.89 and v0.2.8 > v0.2.71 as requested.
+        Returns: 1 if v1 > v2, 0 if equal, -1 if v1 < v2
+        """
+        # Normalize strings (remove v, whitespace)
+        s1 = v1.lower().lstrip('v').strip()
+        s2 = v2.lower().lstrip('v').strip()
         
-        v1_parts = normalize(v1)
-        v2_parts = normalize(v2)
-        
-        # Pad with zeros
-        max_len = max(len(v1_parts), len(v2_parts))
-        v1_parts.extend([0] * (max_len - len(v1_parts)))
-        v2_parts.extend([0] * (max_len - len(v2_parts)))
-        
-        for p1, p2 in zip(v1_parts, v2_parts):
-            if p1 > p2:
-                return 1
-            elif p1 < p2:
-                return -1
+        if s1 > s2:
+            return 1
+        elif s1 < s2:
+            return -1
         return 0
     
     def show_update_dialog(self, release_data, latest_version):
