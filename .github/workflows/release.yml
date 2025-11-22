@@ -810,28 +810,6 @@ jobs:
           Write-Host "=== File Hashes ==="
           
           $portableHash = Get-FileHash -Path "dist/ezSLauncher_Portable.exe" -Algorithm SHA256
-          Write-Host "Portable SHA256: $($portableHash.Hash)"
-          
-          $installerHash = Get-FileHash -Path "dist/ezSLauncher/ezSLauncher.exe" -Algorithm SHA256
-          Write-Host "Installer SHA256: $($installerHash.Hash)"
-          
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value @"
-          ## Build Info
-          
-          ### Portable Version
-          - SHA256: ``$($portableHash.Hash)``
-          - [VirusTotal Scan](https://www.virustotal.com/gui/file/$($portableHash.Hash))
-          
-          ### Installer Version
-          - SHA256: ``$($installerHash.Hash)``
-          - [VirusTotal Scan](https://www.virustotal.com/gui/file/$($installerHash.Hash))
-          "@
-
-      # Prepare release packages
-      - name: Prepare Release Packages
-        shell: pwsh
-        run: |
-          Write-Host "=== Preparing Release Packages ==="
           
           # Create release directory
           New-Item -ItemType Directory -Force -Path "release"
