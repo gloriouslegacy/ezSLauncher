@@ -691,38 +691,6 @@ jobs:
           Write-Host "✓ Portable package created"
           Write-Host "  Contents: ezSLauncher_Portable.exe, updater.exe, language folder, README_Portable.txt"
           
-          # Package Manual Install version (ZIP)
-          Write-Host "Packaging Manual Install ZIP..."
-          Remove-Item "release" -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path "release" | Out-Null
-          
-          Copy-Item -Path "dist/ezSLauncher/*" -Destination "release/" -Recurse
-          if (Test-Path "README.md") { Copy-Item "README.md" "release/README.txt" }
-          if (Test-Path "LICENSE") { Copy-Item "LICENSE" "release/" }
-          
-          # Create README for manual install
-          @"
-          ezSLauncher - Manual Install Version
-          
-          This is the manual installation version with all files in a folder.
-          
-          To install:
-          1. Extract all files to a folder (e.g., C:\Program Files\ezSLauncher)
-          2. Run ezSLauncher.exe
-          3. (Optional) Create a shortcut on your desktop
-          
-          Language Support:
-          - English is built-in (default)
-          - Korean requires lang_ko.ini file (included in this package)
-          - To switch language: Menu → Language → 한국어
-          
-          For easier installation with setup wizard, download ezSLauncher_Setup.exe instead.
-          "@ | Out-File -FilePath "release/README_MANUAL.txt" -Encoding UTF8
-          
-          Compress-Archive -Path "release/*" -DestinationPath "ezSLauncher_Manual.zip" -Force
-          
-          Write-Host "✓ Manual install package created"
-          
           # Setup wizard installer is already created (ezSLauncher_Setup.exe)
           if (Test-Path "ezSLauncher_Setup.exe") {
             Write-Host "✓ Setup wizard installer available"
@@ -732,9 +700,7 @@ jobs:
           
           Write-Host "`n=== Package Sizes ==="
           $portableSize = (Get-Item "ezSLauncher_Portable.zip").Length / 1MB
-          $manualSize = (Get-Item "ezSLauncher_Manual.zip").Length / 1MB
           Write-Host "Portable ZIP: $([math]::Round($portableSize, 2)) MB"
-          Write-Host "Manual ZIP: $([math]::Round($manualSize, 2)) MB"
           if (Test-Path "ezSLauncher_Setup.exe") {
             $setupSize = (Get-Item "ezSLauncher_Setup.exe").Length / 1MB
             Write-Host "Setup Wizard: $([math]::Round($setupSize, 2)) MB"
@@ -745,11 +711,6 @@ jobs:
           Expand-Archive -Path "ezSLauncher_Portable.zip" -DestinationPath "temp_verify_portable" -Force
           Get-ChildItem "temp_verify_portable" | Format-Table Name, Length
           Remove-Item -Recurse -Force "temp_verify_portable"
-          
-          Write-Host "`nManual ZIP contents:"
-          Expand-Archive -Path "ezSLauncher_Manual.zip" -DestinationPath "temp_verify_manual" -Force
-          Get-ChildItem "temp_verify_manual" -Recurse | Where-Object { $_.Name -match '\.(exe|ini|txt)$' } | Format-Table Name, Length
-          Remove-Item -Recurse -Force "temp_verify_manual"
 
 
       # Calculate SHA256 for release assets
@@ -759,16 +720,13 @@ jobs:
           Write-Host "=== Calculating SHA256 Hashes ==="
           
           $portableHash = (Get-FileHash -Path "ezSLauncher_Portable.zip" -Algorithm SHA256).Hash
-          $manualHash = (Get-FileHash -Path "ezSLauncher_Manual.zip" -Algorithm SHA256).Hash
           $setupHash = (Get-FileHash -Path "ezSLauncher_Setup.exe" -Algorithm SHA256).Hash
           
           Write-Host "Portable ZIP SHA256: $portableHash"
-          Write-Host "Manual ZIP SHA256: $manualHash"
           Write-Host "Setup EXE SHA256: $setupHash"
           
           # Save hashes to environment
           "PORTABLE_SHA256=$portableHash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "MANUAL_SHA256=$manualHash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "SETUP_SHA256=$setupHash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       # Create GitHub Release
       - name: Create GitHub Release
@@ -794,10 +752,6 @@ jobs:
             ${{ env.SETUP_SHA256 }}
             ```
             
-            **Manual Install Version (ZIP)**
-            ```
-            ${{ env.MANUAL_SHA256 }}
-            ```
             ## 📝 Changelog
 
             See commit history for detailed changes.
@@ -805,7 +759,6 @@ jobs:
           files: |
             ezSLauncher_Setup.exe
             ezSLauncher_Portable.zip
-            ezSLauncher_Manual.zip
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
