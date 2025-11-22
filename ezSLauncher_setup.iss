@@ -40,7 +40,7 @@ UsePreviousPrivileges=no
 
 ; UI settings
 UsePreviousAppDir=no
-DisableDirPage=auto
+DisableDirPage=yes
 WizardStyle=modern
 SetupIconFile=icon\icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
