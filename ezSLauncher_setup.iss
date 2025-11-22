@@ -35,10 +35,11 @@ SolidCompression=yes
 MinVersion=10.0.19041
 
 ; Privileges
-PrivilegesRequired=admin
-PrivilegesRequiredOverridesAllowed=dialog
+PrivilegesRequired=lowest
+; PrivilegesRequiredOverridesAllowed=dialog
 
 ; UI settings
+DisableDirPage=yes
 WizardStyle=modern
 SetupIconFile=icon\icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -51,7 +52,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1; Check: not IsAdminInstallMode
 
 [Files]
