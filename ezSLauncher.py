@@ -894,41 +894,41 @@ class FileSearchApp:
         
         # Search button
         self.search_btn = ttk.Button(control_frame, text=self.t("search"), command=self.start_search, width=15)
-        self.search_btn.grid(row=0, column=0, padx=(0, 5))
+        self.search_btn.grid(row=0, column=0, padx=(0, 2))
         
         # Stop button
         self.stop_btn = ttk.Button(control_frame, text=self.t("stop"), command=self.stop_search, width=15)
-        self.stop_btn.grid(row=0, column=1, padx=(0, 10))
+        self.stop_btn.grid(row=0, column=1, padx=(0, 2))
         self.stop_btn.grid_remove()
         
         # Execute selected button
         self.execute_btn = ttk.Button(control_frame, text=self.t("execute_selected"), command=self.execute_selected, width=18)
-        self.execute_btn.grid(row=0, column=2, padx=(0, 10))
+        self.execute_btn.grid(row=0, column=2, padx=(0, 2))
         
         # Clear results button
         self.clear_btn = ttk.Button(control_frame, text=self.t("clear_results"), command=self.clear_results, width=15)
-        self.clear_btn.grid(row=0, column=3, padx=(0, 10))
+        self.clear_btn.grid(row=0, column=3, padx=(0, 2))
+        
+        # Select all/none
+        self.select_all_btn = ttk.Button(control_frame, text=self.t("select_all"), command=self.select_all, width=12)
+        self.select_all_btn.grid(row=0, column=4, padx=(0, 2))
+        
+        self.select_none_btn = ttk.Button(control_frame, text=self.t("select_none"), command=self.select_none, width=12)
+        self.select_none_btn.grid(row=0, column=5, padx=(0, 10))
         
         # Export results button
         self.export_btn = ttk.Button(control_frame, text=self.t("export_results"), command=self.export_results, width=15)
-        self.export_btn.grid(row=0, column=7, padx=(20, 0))
+        self.export_btn.grid(row=0, column=6, padx=(0, 2))
         
         # Startup folder button (Windows only)
         if sys.platform == 'win32':
             self.startup_btn = ttk.Button(control_frame, text="🚀 " + self.t("open_startup_folder"), 
                                          command=self.open_startup_folder, width=18)
-            self.startup_btn.grid(row=0, column=8, padx=(5, 0))
+            self.startup_btn.grid(row=0, column=7, padx=(0, 10))
         
-        # Select all/none
-        self.select_all_btn = ttk.Button(control_frame, text=self.t("select_all"), command=self.select_all, width=12)
-        self.select_all_btn.grid(row=0, column=4, padx=(0, 5))
-        
-        self.select_none_btn = ttk.Button(control_frame, text=self.t("select_none"), command=self.select_none, width=12)
-        self.select_none_btn.grid(row=0, column=5)
-        
-        # Results count label
-        self.results_label = ttk.Label(control_frame, text=self.t("results") + " 0")
-        self.results_label.grid(row=0, column=6, padx=(20, 0))
+        # Results count label - give it more space and sticky west
+        self.results_label = ttk.Label(control_frame, text=self.t("results") + " 0", width=15)
+        self.results_label.grid(row=0, column=8, padx=(0, 0), sticky=tk.W)
         
         # Store buttons for enabling/disabling during search
         self.control_buttons = [
