@@ -34,11 +34,11 @@ SolidCompression=yes
 ; Windows version requirement
 MinVersion=10.0.19041
 
-; Privileges
+; Privileges - 1. Install mode 선택 제거 (PrivilegesRequiredOverridesAllowed 제거)
 PrivilegesRequired=lowest
 UsePreviousPrivileges=no
 
-; UI settings
+; UI settings - 2. 경로 변경 불가 (DisableDirPage=yes)
 UsePreviousAppDir=no
 DisableDirPage=yes
 WizardStyle=modern
@@ -53,6 +53,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Tasks]
+; 3. Desktop shortcut 기본값 활성화 (Flags: checked)
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checked
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1; Check: not IsAdminInstallMode
 
