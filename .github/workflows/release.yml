@@ -627,189 +627,16 @@ jobs:
           - SHA256: ``$($portableHash.Hash)``
           - [VirusTotal Scan](https://www.virustotal.com/gui/file/$($portableHash.Hash))
           
-            "; Internal dependencies",
-            "Source: `"dist\ezSLauncher\_internal\*`"; DestDir: `"{app}\_internal`"; Flags: ignoreversion recursesubdirs createallsubdirs",
-            "",
-            "[Icons]",
-            "; Start Menu shortcuts",
-            "Name: `"{group}\{#MyAppName}`"; Filename: `"{app}\{#MyAppExeName}`"",
-            "Name: `"{group}\Uninstall {#MyAppName}`"; Filename: `"{uninstallexe}`"",
-            "",
-            "; Desktop shortcut",
-            "Name: `"{autodesktop}\{#MyAppName}`"; Filename: `"{app}\{#MyAppExeName}`"; Tasks: desktopicon",
-            "",
-            "[Run]",
-            "; Option to run after installation",
-            "Filename: `"{app}\{#MyAppExeName}`"; Description: `"Launch {#MyAppName}`"; Flags: nowait postinstall skipifsilent",
-            "",
-            "[UninstallDelete]",
-            "; Clean up config files on uninstall",
-            "Type: files; Name: `"{app}\app_config.json`"",
-            "Type: dirifempty; Name: `"{app}`""
-          )
-          
-          # Save ISS file
-          $issLines | Out-File -FilePath "ezSLauncher_setup.iss" -Encoding UTF8
-          
-          Write-Host "`n✓ ISS file created"
-          Write-Host "Version: $versionClean"
-          Write-Host "`n=== ISS File Content ==="
-          Get-Content "ezSLauncher_setup.iss"
+          ### Installer Version
+          - SHA256: ``$($installerHash.Hash)``
+          - [VirusTotal Scan](https://www.virustotal.com/gui/file/$($installerHash.Hash))
+          "@
 
-      # Create Windows Installer with Setup Wizard
-      - name: Create Setup Wizard Installer
+      # Prepare release packages
+      - name: Prepare Release Packages
         shell: pwsh
         run: |
-          Write-Host "=== Creating Setup Wizard Installer ==="
-          
-          # Verify ISS file exists
-          if (-not (Test-Path "ezSLauncher_setup.iss")) {
-            Write-Host "✗ ezSLauncher_setup.iss not found"
-            exit 1
-          }
-          
-          Write-Host "✓ ISS file found"
-          
-          # Verify build output exists
-          if (-not (Test-Path "dist/ezSLauncher/ezSLauncher.exe")) {
-            Write-Host "✗ dist/ezSLauncher/ezSLauncher.exe not found"
-            Write-Host "Build output directory contents:"
-            Get-ChildItem "dist" -Recurse | Format-Table FullName
-            exit 1
-          }
-          
-          Write-Host "✓ Build output verified"
-          
-          # List files that will be included
-          Write-Host "`n=== Files to be included in installer ==="
-          Write-Host "Main executable:"
-          Get-Item "dist/ezSLauncher/ezSLauncher.exe" | Format-Table Name, Length
-          
-          Write-Host "`nLanguage file:"
-          if (Test-Path "dist/ezSLauncher/language/lang_ko.ini") {
-            Get-Item "dist/ezSLauncher/language/lang_ko.ini" | Format-Table Name, Length
-          } else {
-            Write-Host "⚠ lang_ko.ini not found"
-          }
-          
-          Write-Host "`nIcon folder:"
-          if (Test-Path "dist/ezSLauncher/icon") {
-            Get-ChildItem "dist/ezSLauncher/icon" | Format-Table Name, Length
-          } else {
-            Write-Host "⚠ icon folder not found"
-          }
-          
-          # Compile with Inno Setup
-          $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          
-          if (-not (Test-Path $isccPath)) {
-            Write-Host "✗ Inno Setup compiler not found at: $isccPath"
-            exit 1
-          }
-          
-          Write-Host "`nCompiling installer with Inno Setup..."
-          Write-Host "Compiler: $isccPath"
-          Write-Host "Script: ezSLauncher_setup.iss"
-          Write-Host "Working directory: $PWD"
-          
-          # Run ISCC
-          & $isccPath "ezSLauncher_setup.iss"
-          
-          $exitCode = $LASTEXITCODE
-          Write-Host "ISCC exit code: $exitCode"
-          
-          if ($exitCode -ne 0) {
-            Write-Host "✗ Inno Setup compilation failed with exit code: $exitCode"
-            Write-Host "`n=== Checking for error logs ==="
-            Get-ChildItem -Filter "*.log" | ForEach-Object {
-              Write-Host "`nLog file: $($_.Name)"
-              Get-Content $_.FullName
-            }
-            exit 1
-          }
-          
-          Write-Host "✓ Compilation completed successfully"
-          
-          # Verify output directory
-          if (-not (Test-Path "installer_output")) {
-            Write-Host "⚠ installer_output directory not created"
-            Write-Host "Searching for setup files..."
-            Get-ChildItem -Filter "*.exe" -Recurse | Where-Object { $_.Name -like "*Setup*" } | Format-Table FullName, Length
-            exit 1
-          }
-          
-          # Find setup file
-          $setupFile = Get-ChildItem "installer_output" -Filter "ezSLauncher_Setup_*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          
-          if ($setupFile) {
-            $size = $setupFile.Length / 1MB
-            Write-Host "✓ Setup file created: $($setupFile.Name)"
-            Write-Host "  Size: $([math]::Round($size, 2)) MB"
-            Write-Host "  Path: $($setupFile.FullName)"
-            
-            # Copy to root with simpler name
-            Copy-Item $setupFile.FullName -Destination "ezSLauncher_Setup.exe"
-            Write-Host "✓ Copied to: ezSLauncher_Setup.exe"
-          } else {
-            Write-Host "✗ Setup file not found in installer_output"
-            Write-Host "`nContents of installer_output:"
-            Get-ChildItem "installer_output" | Format-Table Name, Length
-            exit 1
-          }
-
-      # Verify built executables
-      - name: Verify Built Executables
-        shell: pwsh
-        run: |
-          Write-Host "=== Verifying Built Executables ==="
-          
-          # Check Portable
-          if (Test-Path "dist/ezSLauncher_Portable.exe") {
-            $exeSize = (Get-Item "dist/ezSLauncher_Portable.exe").Length
-            Write-Host "✓ Portable EXE: $($exeSize / 1MB) MB"
-            
-            try {
-              Add-Type -AssemblyName System.Drawing
-              $icon = [System.Drawing.Icon]::ExtractAssociatedIcon("$PWD\dist\ezSLauncher_Portable.exe")
-              if ($icon) {
-                Write-Host "✓ Portable icon verified: $($icon.Width)x$($icon.Height)"
-                $icon.Dispose()
-              }
-            } catch {
-              Write-Host "⚠ Could not verify portable icon: $($_.Exception.Message)"
-            }
-          } else {
-            Write-Host "✗ Portable EXE not found"
-            exit 1
-          }
-          
-          # Check Installer
-          if (Test-Path "dist/ezSLauncher/ezSLauncher.exe") {
-            $exeSize = (Get-Item "dist/ezSLauncher/ezSLauncher.exe").Length
-            Write-Host "✓ Installer EXE: $($exeSize / 1MB) MB"
-            
-            try {
-              Add-Type -AssemblyName System.Drawing
-              $icon = [System.Drawing.Icon]::ExtractAssociatedIcon("$PWD\dist\ezSLauncher\ezSLauncher.exe")
-              if ($icon) {
-                Write-Host "✓ Installer icon verified: $($icon.Width)x$($icon.Height)"
-                $icon.Dispose()
-              }
-            } catch {
-              Write-Host "⚠ Could not verify installer icon: $($_.Exception.Message)"
-            }
-          } else {
-            Write-Host "✗ Installer EXE not found"
-            exit 1
-          }
-
-      # Generate file hashes
-      - name: Generate File Hashes
-        shell: pwsh
-        run: |
-          Write-Host "=== File Hashes ==="
-          
-          $portableHash = Get-FileHash -Path "dist/ezSLauncher_Portable.exe" -Algorithm SHA256
+          Write-Host "=== Preparing Release Packages ==="
           
           # Create release directory
           New-Item -ItemType Directory -Force -Path "release"
@@ -862,6 +689,38 @@ jobs:
           Write-Host "✓ Portable package created"
           Write-Host "  Contents: ezSLauncher_Portable.exe, updater.exe, language folder, README_Portable.txt"
           
+          # Package Manual Install version (ZIP)
+          Write-Host "Packaging Manual Install ZIP..."
+          Remove-Item "release" -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path "release" | Out-Null
+          
+          Copy-Item -Path "dist/ezSLauncher/*" -Destination "release/" -Recurse
+          if (Test-Path "README.md") { Copy-Item "README.md" "release/README.txt" }
+          if (Test-Path "LICENSE") { Copy-Item "LICENSE" "release/" }
+          
+          # Create README for manual install
+          @"
+          ezSLauncher - Manual Install Version
+          
+          This is the manual installation version with all files in a folder.
+          
+          To install:
+          1. Extract all files to a folder (e.g., C:\Program Files\ezSLauncher)
+          2. Run ezSLauncher.exe
+          3. (Optional) Create a shortcut on your desktop
+          
+          Language Support:
+          - English is built-in (default)
+          - Korean requires lang_ko.ini file (included in this package)
+          - To switch language: Menu → Language → 한국어
+          
+          For easier installation with setup wizard, download ezSLauncher_Setup.exe instead.
+          "@ | Out-File -FilePath "release/README_MANUAL.txt" -Encoding UTF8
+          
+          Compress-Archive -Path "release/*" -DestinationPath "ezSLauncher_Manual.zip" -Force
+          
+          Write-Host "✓ Manual install package created"
+          
           # Setup wizard installer is already created (ezSLauncher_Setup.exe)
           if (Test-Path "ezSLauncher_Setup.exe") {
             Write-Host "✓ Setup wizard installer available"
@@ -871,7 +730,9 @@ jobs:
           
           Write-Host "`n=== Package Sizes ==="
           $portableSize = (Get-Item "ezSLauncher_Portable.zip").Length / 1MB
+          $manualSize = (Get-Item "ezSLauncher_Manual.zip").Length / 1MB
           Write-Host "Portable ZIP: $([math]::Round($portableSize, 2)) MB"
+          Write-Host "Manual ZIP: $([math]::Round($manualSize, 2)) MB"
           if (Test-Path "ezSLauncher_Setup.exe") {
             $setupSize = (Get-Item "ezSLauncher_Setup.exe").Length / 1MB
             Write-Host "Setup Wizard: $([math]::Round($setupSize, 2)) MB"
@@ -882,6 +743,12 @@ jobs:
           Expand-Archive -Path "ezSLauncher_Portable.zip" -DestinationPath "temp_verify_portable" -Force
           Get-ChildItem "temp_verify_portable" | Format-Table Name, Length
           Remove-Item -Recurse -Force "temp_verify_portable"
+          
+          Write-Host "`nManual ZIP contents:"
+          Expand-Archive -Path "ezSLauncher_Manual.zip" -DestinationPath "temp_verify_manual" -Force
+          Get-ChildItem "temp_verify_manual" -Recurse | Where-Object { $_.Name -match '\.(exe|ini|txt)$' } | Format-Table Name, Length
+          Remove-Item -Recurse -Force "temp_verify_manual"
+
 
       # Calculate SHA256 for release assets
       - name: Calculate Release SHA256
@@ -890,15 +757,17 @@ jobs:
           Write-Host "=== Calculating SHA256 Hashes ==="
           
           $portableHash = (Get-FileHash -Path "ezSLauncher_Portable.zip" -Algorithm SHA256).Hash
+          $manualHash = (Get-FileHash -Path "ezSLauncher_Manual.zip" -Algorithm SHA256).Hash
           $setupHash = (Get-FileHash -Path "ezSLauncher_Setup.exe" -Algorithm SHA256).Hash
           
           Write-Host "Portable ZIP SHA256: $portableHash"
+          Write-Host "Manual ZIP SHA256: $manualHash"
           Write-Host "Setup EXE SHA256: $setupHash"
           
           # Save hashes to environment
           "PORTABLE_SHA256=$portableHash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MANUAL_SHA256=$manualHash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "SETUP_SHA256=$setupHash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
       # Create GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -923,6 +792,10 @@ jobs:
             ${{ env.SETUP_SHA256 }}
             ```
             
+            **Manual Install Version (ZIP)**
+            ```
+            ${{ env.MANUAL_SHA256 }}
+            ```
             ## 📝 Changelog
 
             See commit history for detailed changes.
@@ -930,6 +803,7 @@ jobs:
           files: |
             ezSLauncher_Setup.exe
             ezSLauncher_Portable.zip
+            ezSLauncher_Manual.zip
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
