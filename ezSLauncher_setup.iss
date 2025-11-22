@@ -36,12 +36,11 @@ MinVersion=10.0.19041
 
 ; Privileges
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=commandline
 UsePreviousPrivileges=no
 
 ; UI settings
 UsePreviousAppDir=no
-DisableDirPage=yes
+DisableDirPage=auto
 WizardStyle=modern
 SetupIconFile=icon\icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -54,7 +53,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checked
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1; Check: not IsAdminInstallMode
 
 [Files]
