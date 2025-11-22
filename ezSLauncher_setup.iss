@@ -36,7 +36,7 @@ MinVersion=10.0.19041
 
 ; Privileges
 PrivilegesRequired=lowest
-; PrivilegesRequiredOverridesAllowed=dialog
+PrivilegesRequiredOverridesAllowed=commandline
 UsePreviousPrivileges=no
 
 ; UI settings

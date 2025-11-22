@@ -2587,12 +2587,7 @@ class FileSearchApp:
                     creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == 'win32' else 0
                 )
                 
-                messagebox.showinfo(
-                    self.t("update_complete"),
-                    "Update will be installed after the application closes.\nThe application will restart automatically."
-                )
-                
-                # Close application
+                # Close application immediately without message
                 self.root.quit()
                 
             else:
