@@ -449,7 +449,7 @@ jobs:
             "",
             "[Run]",
             "; Option to run after installation",
-            "Filename: `"{app}\{#MyAppExeName}`"; Description: `"Launch {#MyAppName}`"; Flags: nowait postinstall skipifsilent",
+            "Filename: `"{app}\{#MyAppExeName}`"; Description: `"Launch {#MyAppName}`"; Flags: nowait postinstall skipifsilent shellexec",
             "",
             "[UninstallDelete]",
             "; Clean up config files on uninstall",
