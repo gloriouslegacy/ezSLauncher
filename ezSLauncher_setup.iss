@@ -37,8 +37,10 @@ MinVersion=10.0.19041
 ; Privileges
 PrivilegesRequired=lowest
 ; PrivilegesRequiredOverridesAllowed=dialog
+UsePreviousPrivileges=no
 
 ; UI settings
+UsePreviousAppDir=no
 DisableDirPage=yes
 WizardStyle=modern
 SetupIconFile=icon\icon.ico
