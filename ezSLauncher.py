@@ -2595,7 +2595,7 @@ class FileSearchApp:
                 # updater.exe <update_file> <target_dir> <exe_name>
                 subprocess.Popen(
                     [updater_path, update_path, exe_dir, exe_name],
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+                    creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == 'win32' else 0
                 )
                 
                 messagebox.showinfo(
