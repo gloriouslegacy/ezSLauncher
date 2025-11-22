@@ -2416,7 +2416,7 @@ class FileSearchApp:
             parts = []
             for part in v.split('.'):
                 # Extract numeric part only
-                match = re.match(r'(\d+)', part)
+                match = re.search(r'(\d+)', part)
                 if match:
                     parts.append(int(match.group(1)))
             return parts
