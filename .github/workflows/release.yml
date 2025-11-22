@@ -229,6 +229,7 @@ jobs:
             --windowed `
             --name "ezSLauncher_Portable" `
             --clean `
+            --uac-admin `
             --version-file "version_info.txt" `
             --icon="$iconPath" `
             --add-data "icon;icon" `
@@ -271,6 +272,7 @@ jobs:
             --windowed `
             --name "ezSLauncher" `
             --clean `
+            --uac-admin `
             --version-file "version_info.txt" `
             --icon="$iconPath" `
             --add-data "icon;icon" `
