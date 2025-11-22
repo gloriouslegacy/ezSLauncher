@@ -9,7 +9,7 @@
 
 [Setup]
 ; App information
-AppId={{E7A5C4B2-8D9F-4E3A-9B2C-1F6D8A4E5B3C}
+AppId={{E7A5C4B2-8D9F-4E3A-9B2C-1F6D8A4E5B3C}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
@@ -40,7 +40,7 @@ UsePreviousPrivileges=no
 
 ; UI settings
 UsePreviousAppDir=no
-DisableDirPage=yes
+DisableDirPage=auto
 WizardStyle=modern
 SetupIconFile=icon\icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
