@@ -627,39 +627,6 @@ jobs:
           - SHA256: ``$($portableHash.Hash)``
           - [VirusTotal Scan](https://www.virustotal.com/gui/file/$($portableHash.Hash))
           
-          ### Installer Version
-          - SHA256: ``$($installerHash.Hash)``
-          - [VirusTotal Scan](https://www.virustotal.com/gui/file/$($installerHash.Hash))
-          "@
-
-      # Prepare release packages
-      - name: Prepare Release Packages
-        shell: pwsh
-        run: |
-          Write-Host "=== Preparing Release Packages ==="
-          
-          # Create release directory
-          New-Item -ItemType Directory -Force -Path "release"
-          
-          # Package Portable version
-          Write-Host "Packaging Portable..."
-          Copy-Item "dist/ezSLauncher_Portable.exe" "release/"
-          
-          # Copy updater.exe
-          if (Test-Path "dist/updater.exe") {
-            Copy-Item "dist/updater.exe" "release/"
-            Write-Host "✓ updater.exe added to portable package"
-          }
-          
-          # Copy language folder to release folder for portable version
-          if (Test-Path "language") {
-            Copy-Item "language" "release/" -Recurse
-            Write-Host "✓ language folder added to portable package"
-      # Create Windows Installer with Setup Wizard
-      - name: Create Setup Wizard Installer
-        shell: pwsh
-        run: |
-          Write-Host "=== Creating Setup Wizard Installer ==="
           
           # Verify ISS file exists
           if (-not (Test-Path "ezSLauncher_setup.iss")) {
