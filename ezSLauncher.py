@@ -370,7 +370,7 @@ class FileIndexer:
             print(f"Error clearing all indexes: {e}")
             return False
             
-    def update_folder_index(self, folder_path: str, progress_callback=None):
+    def update_folder_index(self, folder_path: str, progress_callback=None, cancel_check=None):
         """Update index for a specific folder"""
         folder_path = os.path.abspath(folder_path)
         
@@ -439,6 +439,10 @@ class FileIndexer:
                 except:
                     pass
         
+        if cancel_check and cancel_check():
+            conn.close()
+            return
+
         if batch_count > 0:
             conn.commit()
             
@@ -454,7 +458,7 @@ class FileIndexer:
             
         conn_master.close()
         
-    def update_index(self, progress_callback=None):
+    def update_index(self, progress_callback=None, cancel_check=None):
         """Rebuild index for all folders"""
         folders = self.get_indexed_folders()
         total_files = 0
@@ -465,7 +469,10 @@ class FileIndexer:
                 if progress_callback:
                     progress_callback(total_files + count)
             
-            self.update_folder_index(folder, folder_progress)
+            self.update_folder_index(folder, folder_progress, cancel_check)
+            
+            if cancel_check and cancel_check():
+                break
             
             # Get count for this folder to update total
             # (We could optimize this but walking is the slow part anyway)
@@ -1474,8 +1481,8 @@ class FileSearchApp:
         
         # Extension filter
         ttk.Label(filter_frame, text=self.t("extension")).grid(row=1, column=0, sticky=tk.W, pady=(0, 5))
-        self.ext_filter = ttk.Entry(filter_frame, width=20)
-        self.ext_filter.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=(0, 5), padx=(0, 10))
+        self.ext_filter = ttk.Entry(filter_frame, width=40)
+        self.ext_filter.grid(row=1, column=1, columnspan=5, sticky=(tk.W, tk.E), pady=(0, 5), padx=(0, 5))
         
         # Tip label
         tip_label = ttk.Label(filter_frame, text=self.t("tip"), 
@@ -1946,7 +1953,7 @@ class FileSearchApp:
         """Show index management dialog with enhanced features"""
         manager = tk.Toplevel(self.root)
         manager.title(self.t("index_manager_title"))
-        manager.geometry("740x500")
+        manager.geometry("773x500")
         self.set_window_icon(manager)
         
         # Apply theme
@@ -2100,7 +2107,7 @@ class FileSearchApp:
                 if success_count > 0:
                     refresh_list()
                     messagebox.showinfo(self.t("success"), self.t("folders_removed").format(len(folders_to_remove)))
-        
+                
         def update_selected_index():
             selection = folder_list.curselection()
             if not selection:
