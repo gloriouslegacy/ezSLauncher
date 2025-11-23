@@ -110,6 +110,10 @@ class FileItem:
 class SearchFilter:
     """Handles search filtering logic with regex support"""
     def __init__(self, name_filter: str = "", ext_filter: str = "", path_filter: str = "", exclude_path_filter: str = "", use_regex: bool = False):
+        # If path_filter and exclude_path_filter are identical, ignore path_filter
+        if path_filter and exclude_path_filter and path_filter.strip() == exclude_path_filter.strip():
+            path_filter = ""
+
         self.use_regex = use_regex
         
         if use_regex:
@@ -3678,6 +3682,7 @@ del "%~f0"
             "name_filter": self.name_filter.get(),
             "ext_filter": self.ext_filter.get(),
             "path_filter": self.path_filter.get(),
+            "exclude_path_filter": self.exclude_path_filter.get(),
             "search_dir": self.search_dir.get(),
             "recursive": self.recursive_var.get(),
             "use_regex": self.regex_var.get(),
@@ -3711,6 +3716,7 @@ del "%~f0"
             self.name_filter.insert(0, self.config.get("name_filter", ""))
             self.ext_filter.insert(0, self.config.get("ext_filter", ""))
             self.path_filter.insert(0, self.config.get("path_filter", ""))
+            self.exclude_path_filter.insert(0, self.config.get("exclude_path_filter", ""))
             self.search_dir.insert(0, self.config.get("search_dir", default_dir))
             self.recursive_var.set(self.config.get("recursive", True))
             
