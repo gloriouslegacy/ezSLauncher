@@ -109,13 +109,14 @@ class FileItem:
 
 class SearchFilter:
     """Handles search filtering logic with regex support"""
-    def __init__(self, name_filter: str = "", ext_filter: str = "", path_filter: str = "", use_regex: bool = False):
+    def __init__(self, name_filter: str = "", ext_filter: str = "", path_filter: str = "", exclude_path_filter: str = "", use_regex: bool = False):
         self.use_regex = use_regex
         
         if use_regex:
             self.name_filters = []
             self.ext_filters = []
             self.path_filters = []
+            self.exclude_path_filters = []
             
             for f in name_filter.replace(',', '|').replace(';', '|').split('|') if name_filter else []:
                 f = f.strip()
@@ -142,15 +143,29 @@ class SearchFilter:
                         self.path_filters.append(re.compile(f, re.IGNORECASE))
                     except re.error:
                         self.path_filters.append(re.compile(re.escape(f), re.IGNORECASE))
+
+            for f in exclude_path_filter.replace(',', '|').replace(';', '|').split('|') if exclude_path_filter else []:
+                f = f.strip()
+                if f:
+                    try:
+                        self.exclude_path_filters.append(re.compile(f, re.IGNORECASE))
+                    except re.error:
+                        self.exclude_path_filters.append(re.compile(re.escape(f), re.IGNORECASE))
         else:
             self.name_filters = [f.strip().lower() for f in name_filter.replace(',', ' ').replace(';', ' ').split() if f.strip()]
             self.ext_filters = [f.strip().lower() if f.strip().startswith('.') else '.' + f.strip().lower() 
                                for f in ext_filter.replace(',', ' ').replace(';', ' ').split() if f.strip()]
             self.path_filters = [f.strip().lower() for f in path_filter.replace(',', ' ').replace(';', ' ').split() if f.strip()]
+            self.exclude_path_filters = [f.strip().lower() for f in exclude_path_filter.replace(',', ' ').replace(';', ' ').split() if f.strip()]
     
     def matches(self, file_item: FileItem) -> bool:
         """Check if file matches all filters"""
         if self.use_regex:
+            # Check exclusions first
+            if self.exclude_path_filters:
+                if any(pattern.search(file_item.path) for pattern in self.exclude_path_filters):
+                    return False
+
             if self.name_filters:
                 if not any(pattern.search(file_item.name) for pattern in self.name_filters):
                     return False
@@ -163,6 +178,11 @@ class SearchFilter:
                 if not any(pattern.search(file_item.path) for pattern in self.path_filters):
                     return False
         else:
+            # Check exclusions first
+            if self.exclude_path_filters:
+                if any(exclude_filter in file_item.path.lower() for exclude_filter in self.exclude_path_filters):
+                    return False
+
             if self.name_filters:
                 if not any(name_filter in file_item.name.lower() for name_filter in self.name_filters):
                     return False
@@ -203,6 +223,12 @@ class FileIndexer:
             db_filename TEXT
         )
         ''')
+        
+        # Check if last_updated column exists, add if not
+        try:
+            cursor.execute('SELECT last_updated FROM indexed_folders LIMIT 1')
+        except sqlite3.OperationalError:
+            cursor.execute('ALTER TABLE indexed_folders ADD COLUMN last_updated TEXT')
         
         conn.commit()
         conn.close()
@@ -253,7 +279,9 @@ class FileIndexer:
             path_hash = hashlib.md5(path.encode('utf-8')).hexdigest()
             db_filename = f"{path_hash}.db"
             
-            cursor.execute('INSERT INTO indexed_folders (path, db_filename) VALUES (?, ?)', (path, db_filename))
+            # Add initial last_updated timestamp
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute('INSERT INTO indexed_folders (path, db_filename, last_updated) VALUES (?, ?, ?)', (path, db_filename, current_time))
             conn.commit()
             conn.close()
             
@@ -309,6 +337,19 @@ class FileIndexer:
             return folders
         except:
             return []
+
+    def get_indexed_folders_details(self) -> List[tuple]:
+        """Get list of indexed folders with details (path, last_updated)"""
+        try:
+            conn = sqlite3.connect(self.master_db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('SELECT path, last_updated FROM indexed_folders')
+            details = [(row['path'], row['last_updated']) for row in cursor.fetchall()]
+            conn.close()
+            return details
+        except:
+            return []
             
     def clear_all(self):
         """Clear all indexed files and folders (delete all DBs)"""
@@ -316,11 +357,7 @@ class FileIndexer:
             # Delete all files in indexes directory
             if os.path.exists(self.indexes_dir):
                 for f in os.listdir(self.indexes_dir):
-                    if f.endswith('.db'):
-                        try:
-                            os.remove(os.path.join(self.indexes_dir, f))
-                        except:
-                            pass
+                    os.remove(os.path.join(self.indexes_dir, f))
             
             # Clear master table
             conn = sqlite3.connect(self.master_db_path)
@@ -342,9 +379,9 @@ class FileIndexer:
         cursor_master = conn_master.cursor()
         cursor_master.execute('SELECT db_filename FROM indexed_folders WHERE path = ?', (folder_path,))
         row = cursor_master.fetchone()
-        conn_master.close()
         
         if not row:
+            conn_master.close()
             return
             
         db_path = self.get_folder_db_path(row[0])
@@ -358,6 +395,7 @@ class FileIndexer:
         conn.commit()
         
         if not os.path.exists(folder_path):
+            conn_master.close()
             return
             
         count = 0
@@ -405,6 +443,16 @@ class FileIndexer:
             conn.commit()
             
         conn.close()
+        
+        # Update last_updated timestamp in master DB
+        try:
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor_master.execute('UPDATE indexed_folders SET last_updated = ? WHERE path = ?', (current_time, folder_path))
+            conn_master.commit()
+        except Exception as e:
+            print(f"Error updating timestamp: {e}")
+            
+        conn_master.close()
         
     def update_index(self, progress_callback=None):
         """Rebuild index for all folders"""
@@ -776,7 +824,7 @@ class FileSearchApp:
         
         # Set title with correct language
         self.root.title(self.t("title"))
-        self.root.geometry("1150x700")
+        self.root.geometry("1150x740")
         
         # Set icon if available
         self.set_icon()
@@ -854,8 +902,22 @@ class FileSearchApp:
         # Initialize Indexer
         self.indexer = FileIndexer(CONFIG_DIR)
         
+        # Initialize Idle Monitor
+        self.idle_monitor = IdleMonitor(self)
+        self.idle_monitor.start()
+        
         # Check for updates on startup (after 3 seconds delay)
         self.root.after(3000, self.check_for_updates_silent)
+
+    def load_config(self):
+        """Load configuration from JSON file"""
+        try:
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"Error loading config: {e}")
+        return {}
     
     def load_language_file(self, lang_name: str):
         """Load translations from INI file (legacy method)"""
@@ -1318,6 +1380,10 @@ class FileSearchApp:
     
     def create_ui(self):
         """Create user interface"""
+        # Define styles
+        style = ttk.Style()
+        style.configure("Red.TCheckbutton", foreground="red")
+        
         # Create menu bar
         self.create_menu_bar()
         
@@ -1388,7 +1454,7 @@ class FileSearchApp:
     def toggle_regex_tip(self):
         """Toggle regex tip visibility"""
         if self.regex_var.get():
-            self.regex_tip.grid(row=5, column=0, columnspan=6, sticky=tk.W, pady=(2, 0))
+            self.regex_tip.grid(row=6, column=0, columnspan=6, sticky=tk.W, pady=(2, 0))
         else:
             self.regex_tip.grid_remove()
         
@@ -1411,11 +1477,6 @@ class FileSearchApp:
         self.ext_filter = ttk.Entry(filter_frame, width=20)
         self.ext_filter.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=(0, 5), padx=(0, 10))
         
-        # Path filter
-        ttk.Label(filter_frame, text=self.t("path_contains")).grid(row=1, column=2, sticky=tk.W, pady=(0, 5), padx=(10, 5))
-        self.path_filter = ttk.Entry(filter_frame, width=30)
-        self.path_filter.grid(row=1, column=3, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 5), padx=(0, 5))
-        
         # Tip label
         tip_label = ttk.Label(filter_frame, text=self.t("tip"), 
                              foreground="gray", font=('', 8))
@@ -1426,10 +1487,30 @@ class FileSearchApp:
         self.search_dir = ttk.Entry(filter_frame, width=60)
         self.search_dir.grid(row=3, column=1, columnspan=4, sticky=(tk.W, tk.E), pady=(10, 0), padx=(0, 5))
         
+        self.browse_btn = ttk.Button(filter_frame, text=self.t("browse"), command=self.browse_directory)
+        self.browse_btn.grid(row=3, column=5, pady=(10, 0), sticky=tk.W)
+
+        # Path filter (Moved below Search Directory)
+        ttk.Label(filter_frame, text=self.t("path_contains")).grid(row=4, column=0, sticky=tk.W, pady=(5, 0))
+        self.path_filter = ttk.Entry(filter_frame, width=30)
+        self.path_filter.grid(row=4, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 0), padx=(0, 5))
+
+        # Exclude Path filter (New)
+        ttk.Label(filter_frame, text=self.t("exclude_path")).grid(row=4, column=3, sticky=tk.W, pady=(5, 0), padx=(10, 5))
+        self.exclude_path_filter = ttk.Entry(filter_frame, width=30)
+        self.exclude_path_filter.grid(row=4, column=4, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 0), padx=(0, 5))
+        
+        # Equalize column weights for filter entries
+        filter_frame.columnconfigure(1, weight=1)
+        filter_frame.columnconfigure(2, weight=1)
+        filter_frame.columnconfigure(4, weight=1)
+        filter_frame.columnconfigure(5, weight=1)
+        
         # Bind auto-save on filter changes (with debounce)
         self.name_filter.bind('<KeyRelease>', lambda e: self.schedule_save_settings())
         self.ext_filter.bind('<KeyRelease>', lambda e: self.schedule_save_settings())
         self.path_filter.bind('<KeyRelease>', lambda e: self.schedule_save_settings())
+        self.exclude_path_filter.bind('<KeyRelease>', lambda e: self.schedule_save_settings())
         self.search_dir.bind('<KeyRelease>', lambda e: self.schedule_save_settings())
         
         self.browse_btn = ttk.Button(filter_frame, text=self.t("browse"), command=self.browse_directory)
@@ -1437,14 +1518,14 @@ class FileSearchApp:
         
         # Options
         options_frame = ttk.Frame(filter_frame)
-        options_frame.grid(row=4, column=0, columnspan=6, sticky=tk.W, pady=(5, 0))
+        options_frame.grid(row=5, column=0, columnspan=6, sticky=tk.W, pady=(5, 0))
         
         self.recursive_var = tk.BooleanVar(value=True)
-        recursive_check = ttk.Checkbutton(options_frame, text=self.t("include_subdirs"), variable=self.recursive_var, command=self.save_settings)
+        recursive_check = ttk.Checkbutton(options_frame, text=self.t("include_subdirs"), variable=self.recursive_var, command=self.save_settings, style="Red.TCheckbutton")
         recursive_check.pack(side=tk.LEFT, padx=(0, 20))
         
         self.regex_var = tk.BooleanVar(value=False)
-        regex_check = ttk.Checkbutton(options_frame, text=self.t("use_regex"), variable=self.regex_var, command=self.toggle_regex_tip)
+        regex_check = ttk.Checkbutton(options_frame, text=self.t("use_regex"), variable=self.regex_var, command=self.toggle_regex_tip, style="Red.TCheckbutton")
         regex_check.pack(side=tk.LEFT)
         
         # Regex tip (initially hidden)
@@ -1468,7 +1549,7 @@ class FileSearchApp:
         
         # Use Index Checkbox
         # self.use_index_var is initialized in __init__
-        self.use_index_chk = ttk.Checkbutton(control_frame, text=self.t("use_index"), variable=self.use_index_var)
+        self.use_index_chk = ttk.Checkbutton(control_frame, text=self.t("use_index"), variable=self.use_index_var, style="Red.TCheckbutton")
         self.use_index_chk.grid(row=0, column=2, padx=(5, 5))
         
         # Execute button
@@ -1756,12 +1837,45 @@ class FileSearchApp:
             messagebox.showinfo(self.t("search_in_progress"), self.t("search_already_running"))
             return
         
-        # If using index, we don't need search_dir necessarily, but let's keep validation if not using index
-        if not self.use_index_var.get():
+        # Initialize search filter first
+        search_filter = SearchFilter(
+            self.name_filter.get(),
+            self.ext_filter.get(),
+            self.path_filter.get(),
+            self.exclude_path_filter.get(),
+            self.regex_var.get()
+        )
+        
+        if self.use_index_var.get():
+            # Check if index is empty
+            if not self.indexer.get_indexed_folders():
+                messagebox.showwarning(self.t("info"), self.t("index_empty_warning"))
+                return
+            
+            # Check if search directory is covered by index
+            search_dir = self.search_dir.get()
+            if search_dir:
+                indexed_folders = self.indexer.get_indexed_folders()
+                is_covered = False
+                search_dir_norm = os.path.normpath(search_dir).lower()
+                for folder in indexed_folders:
+                    folder_norm = os.path.normpath(folder).lower()
+                    if search_dir_norm.startswith(folder_norm):
+                        is_covered = True
+                        break
+                
+                if not is_covered:
+                    messagebox.showwarning(self.t("info"), self.t("index_not_found_for_path"))
+                    return
+                
+            search_dir = self.search_dir.get() if self.search_dir.get() else None
+            thread = threading.Thread(target=self.search_index, args=(search_filter, search_dir, self.exclude_path_filter.get()), daemon=True)
+        else:
             search_dir = self.search_dir.get()
             if not search_dir or not os.path.isdir(search_dir):
                 messagebox.showerror(self.t("invalid_directory"), self.t("invalid_directory_msg"))
                 return
+            thread = threading.Thread(target=self.search_files, args=(search_dir, search_filter), daemon=True)
         
         # Clear previous results
         self.clear_results()
@@ -1777,23 +1891,9 @@ class FileSearchApp:
         self.search_cancelled = False
         self.is_searching = True
         
-        # Start search in background
-        search_filter = SearchFilter(
-            self.name_filter.get(),
-            self.ext_filter.get(),
-            self.path_filter.get(),
-            self.regex_var.get()
-        )
-        
-        if self.use_index_var.get():
-            search_dir = self.search_dir.get() if self.search_dir.get() else None
-            thread = threading.Thread(target=self.search_index, args=(search_filter, search_dir), daemon=True)
-        else:
-            search_dir = self.search_dir.get()
-            thread = threading.Thread(target=self.search_files, args=(search_dir, search_filter), daemon=True)
         thread.start()
 
-    def search_index(self, search_filter: SearchFilter, search_dir: str = None):
+    def search_index(self, search_filter: SearchFilter, search_dir: str = None, exclude_path_filter: str = None):
         """Search using indexer with cancellation support"""
         try:
             self.root.after(0, self.update_status, self.t("searching"))
@@ -1821,7 +1921,8 @@ class FileSearchApp:
                 search_filter, 
                 search_dir=search_dir, 
                 cancel_check=lambda: self.search_cancelled,
-                callback=on_batch_results
+                callback=on_batch_results,
+                exclude_path_filter=exclude_path_filter
             )
             
             if self.search_cancelled:
@@ -1845,7 +1946,7 @@ class FileSearchApp:
         """Show index management dialog with enhanced features"""
         manager = tk.Toplevel(self.root)
         manager.title(self.t("index_manager_title"))
-        manager.geometry("700x500")
+        manager.geometry("740x500")
         self.set_window_icon(manager)
         
         # Apply theme
@@ -1881,18 +1982,35 @@ class FileSearchApp:
         # Status label (create early for use in functions)
         status_label = ttk.Label(main_container, text="", anchor=tk.W)
         
+        # Helper for safe UI updates from threads
+        def safe_config(widget, **kwargs):
+            try:
+                widget.config(**kwargs)
+            except tk.TclError:
+                pass
+
         # Define update_status_label first (needed by refresh_list)
         def update_status_label():
-            files, folders = self.indexer.get_stats()
-            status_label.config(text=self.t("index_status").format(files, folders))
+            try:
+                files, folders = self.indexer.get_stats()
+                safe_config(status_label, text=self.t("index_status").format(files, folders))
+            except:
+                pass
         
         # Populate list
         def refresh_list():
-            folder_list.delete(0, tk.END)
-            folders = self.indexer.get_indexed_folders()
-            for folder in folders:
-                folder_list.insert(tk.END, folder)
-            update_status_label()
+            try:
+                folder_list.delete(0, tk.END)
+                # Get details including timestamp
+                folders_details = self.indexer.get_indexed_folders_details()
+                for path, last_updated in folders_details:
+                    display_text = path
+                    if last_updated:
+                        display_text += f"  [Updated: {last_updated}]"
+                    folder_list.insert(tk.END, display_text)
+                update_status_label()
+            except tk.TclError:
+                pass
             
         refresh_list()
         
@@ -1926,23 +2044,21 @@ class FileSearchApp:
                     refresh_list()
                     
                     # Trigger immediate update for this folder
-                    status_label.config(text=self.t("indexing_new_folder"))
+                    safe_config(status_label, text=self.t("indexing_new_folder"))
                     
-                    def run_single_update():
+                    def run_single_update_for_new_folder():
                         try:
                             def progress(count):
-                                try:
-                                    self.root.after(0, status_label.config, {"text": self.t("indexing_progress").format(count)})
-                                except:
-                                    pass
+                                self.root.after(0, lambda: safe_config(status_label, text=self.t("indexing_progress").format(count)))
                                     
                             self.indexer.update_folder_index(path, progress_callback=progress)
                             self.root.after(0, update_status_label)
-                            self.root.after(0, status_label.config, {"text": self.t("index_complete")})
+                            self.root.after(0, refresh_list)  # Refresh to show timestamp
+                            self.root.after(0, lambda: safe_config(status_label, text=self.t("index_complete")))
                         except Exception as e:
                             print(f"Error indexing new folder: {e}")
                             
-                    threading.Thread(target=run_single_update, daemon=True).start()
+                    threading.Thread(target=run_single_update_for_new_folder, daemon=True).start()
                     
                     messagebox.showinfo(
                         self.t("success"),
@@ -1958,137 +2074,134 @@ class FileSearchApp:
                 )
                 return
             
-            # Get selected folders
-            folders_to_remove = [folder_list.get(i) for i in selection]
-            
-            # Confirm deletion
+            # Get selected folders (need to parse path from display text)
+            folders_to_remove = []
+            for i in selection:
+                display_text = folder_list.get(i)
+                # Extract path (remove timestamp if present)
+                path = display_text.split("  [Updated:")[0]
+                folders_to_remove.append(path)
+                
+            if not folders_to_remove:
+                return
+                
+            # Confirm removal
             if len(folders_to_remove) == 1:
-                confirm_msg = self.t("confirm_remove_single").format(folders_to_remove[0])
+                msg = self.t("confirm_remove_single").format(folders_to_remove[0])
             else:
-                confirm_msg = self.t("confirm_remove_multiple").format(len(folders_to_remove))
-            
-            if messagebox.askyesno(self.t("confirm_delete"), confirm_msg):
+                msg = self.t("confirm_remove_multiple").format(len(folders_to_remove))
+                
+            if messagebox.askyesno(self.t("remove_folder"), msg):
+                success_count = 0
                 for path in folders_to_remove:
-                    self.indexer.remove_folder(path)
-                refresh_list()
-                messagebox.showinfo(
-                    self.t("success"),
-                    self.t("folders_removed").format(len(folders_to_remove))
-                )
-        
-        def clear_all_index():
-            """Clear entire index"""
-            if messagebox.askyesno(
-                self.t("clear_all_index"),
-                self.t("clear_all_confirm")
-            ):
-                if messagebox.askyesno(
-                    self.t("confirm_delete"),
-                    self.t("clear_all_final")
-                ):
-                    try:
-                        self.indexer.clear_all()
-                        refresh_list()
-                        messagebox.showinfo(
-                            self.t("success"),
-                            self.t("clear_all_success")
-                        )
-                    except Exception as e:
-                        messagebox.showerror(self.t("error"), self.t("clear_all_failed").format(str(e)))
-
-        def delete_all_dbs():
-            """Delete all database files explicitly"""
-            if messagebox.askyesno(
-                self.t("delete_all_dbs"),
-                self.t("confirm_delete_all_dbs")
-            ):
-                try:
-                    self.indexer.clear_all()
+                    if self.indexer.remove_folder(path):
+                        success_count += 1
+                
+                if success_count > 0:
                     refresh_list()
-                    messagebox.showinfo(
-                        self.t("success"),
-                        self.t("dbs_deleted")
-                    )
-                except Exception as e:
-                    messagebox.showerror(self.t("error"), str(e))
+                    messagebox.showinfo(self.t("success"), self.t("folders_removed").format(len(folders_to_remove)))
         
-        def open_folder_location():
-            """Open selected folder in file explorer"""
+        def update_selected_index():
             selection = folder_list.curselection()
-            if selection:
-                path = folder_list.get(selection[0])
-                if os.path.exists(path):
-                    try:
-                        if sys.platform == 'win32':
-                            os.startfile(path)
-                        elif sys.platform == 'darwin':
-                            subprocess.Popen(['open', path])
-                        else:
-                            subprocess.Popen(['xdg-open', path])
-                    except Exception as e:
-                        messagebox.showerror(self.t("error"), self.t("open_folder_failed").format(str(e)))
-                else:
-                    messagebox.showwarning(
-                        self.t("folder_not_found"),
-                        self.t("folder_not_found_msg").format(path)
-                    )
-        
-        def update_index():
-            btn_update.state(['disabled'])
-            btn_add.state(['disabled'])
-            btn_remove.state(['disabled'])
-            btn_clear_all.state(['disabled'])
-            status_label.config(text=self.t("indexing_progress").format(0))
+            if not selection:
+                messagebox.showwarning(
+                    self.t("no_selection"),
+                    self.t("select_folder_to_update")
+                )
+                return
+            
+            display_text = folder_list.get(selection[0])
+            path = display_text.split("  [Updated:")[0]
+            
+            if not os.path.exists(path):
+                messagebox.showerror(self.t("error"), self.t("folder_not_found_msg").format(path))
+                return
+
+            safe_config(status_label, text=self.t("indexing_progress").format(0))
+            
+            def run_single_update():
+                try:
+                    def progress(count):
+                        self.root.after(0, lambda: safe_config(status_label, text=self.t("indexing_progress").format(count)))
+                            
+                    self.indexer.update_folder_index(path, progress_callback=progress)
+                    self.root.after(0, update_status_label)
+                    self.root.after(0, refresh_list)
+                    self.root.after(0, lambda: safe_config(status_label, text=self.t("index_complete")))
+                    self.root.after(0, messagebox.showinfo, self.t("success"), self.t("index_complete"))
+                except Exception as e:
+                    self.root.after(0, messagebox.showerror, self.t("error"), str(e))
+                    
+            threading.Thread(target=run_single_update, daemon=True).start()
+
+        def update_all_indexes():
+            safe_config(status_label, text=self.t("indexing_progress").format(0))
             
             def run_update():
                 try:
                     def progress(count):
-                        self.root.after(0, status_label.config, {"text": self.t("indexing_progress").format(count)})
-                        
+                        self.root.after(0, lambda: safe_config(status_label, text=self.t("indexing_progress").format(count)))
+                            
                     self.indexer.update_index(progress_callback=progress)
-                    self.root.after(0, status_label.config, {"text": self.t("index_complete")})
                     self.root.after(0, update_status_label)
+                    self.root.after(0, refresh_list)  # Refresh to show timestamps
+                    self.root.after(0, lambda: safe_config(status_label, text=self.t("index_complete")))
+                    self.root.after(0, messagebox.showinfo, self.t("success"), self.t("index_complete"))
                 except Exception as e:
                     self.root.after(0, messagebox.showerror, self.t("error"), str(e))
-                finally:
-                    self.root.after(0, lambda: btn_update.state(['!disabled']))
-                    self.root.after(0, lambda: btn_add.state(['!disabled']))
-                    self.root.after(0, lambda: btn_remove.state(['!disabled']))
-                    self.root.after(0, lambda: btn_clear_all.state(['!disabled']))
-            
+                    
             threading.Thread(target=run_update, daemon=True).start()
         
-        # Left side buttons
-        left_btn_frame = ttk.Frame(btn_frame)
-        left_btn_frame.pack(side=tk.LEFT)
-        
-        btn_add = ttk.Button(left_btn_frame, text=self.t("add_folder"), command=add_folder)
-        btn_add.pack(side=tk.LEFT, padx=2)
-        
-        btn_remove = ttk.Button(left_btn_frame, text=self.t("remove_folder"), command=remove_folder)
-        btn_remove.pack(side=tk.LEFT, padx=2)
-        
-        btn_open = ttk.Button(left_btn_frame, text=self.t("open_location"), command=open_folder_location)
-        btn_open.pack(side=tk.LEFT, padx=2)
-        
-        btn_clear_all = ttk.Button(left_btn_frame, text=self.t("clear_all_index"), command=clear_all_index)
-        btn_clear_all.pack(side=tk.LEFT, padx=2)
+        def open_location():
+            selection = folder_list.curselection()
+            if selection:
+                display_text = folder_list.get(selection[0])
+                path = display_text.split("  [Updated:")[0]
+                if os.path.exists(path):
+                    try:
+                        if sys.platform == 'win32':
+                            os.startfile(path)
+                        else:
+                            import subprocess
+                            subprocess.Popen(['xdg-open', path])
+                    except Exception as e:
+                        messagebox.showerror(self.t("error"), str(e))
+                else:
+                    messagebox.showerror(self.t("error"), self.t("folder_not_found_msg").format(path))
 
-        # New "Delete All DBs" button
-        btn_delete_dbs = ttk.Button(left_btn_frame, text=self.t("delete_all_dbs"), command=delete_all_dbs)
-        btn_delete_dbs.pack(side=tk.LEFT, padx=2)
+        def delete_all_dbs():
+            if messagebox.askyesno(self.t("delete_all_dbs"), self.t("confirm_delete_all_dbs")):
+                if self.indexer.clear_all():
+                    refresh_list()
+                    messagebox.showinfo(self.t("success"), self.t("dbs_deleted"))
+                else:
+                    messagebox.showerror(self.t("error"), "Failed to delete DBs")
         
-        # Right side button
-        btn_update = ttk.Button(btn_frame, text=self.t("update_index"), command=update_index)
-        btn_update.pack(side=tk.RIGHT, padx=2)
+        # Buttons
+        left_btn_frame = ttk.Frame(btn_frame)
+        left_btn_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        # Pack status label at the bottom
-        status_label.pack(pady=5, fill=tk.X)
+        ttk.Button(left_btn_frame, text=self.t("add_folder"), command=add_folder).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(left_btn_frame, text=self.t("remove_folder"), command=remove_folder).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(left_btn_frame, text=self.t("open_location"), command=open_location).pack(side=tk.LEFT, padx=(0, 5))
+        
+        right_btn_frame = ttk.Frame(btn_frame)
+        right_btn_frame.pack(side=tk.RIGHT)
+        
+        ttk.Button(right_btn_frame, text=self.t("update_selected_index"), command=update_selected_index).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(right_btn_frame, text=self.t("update_all_indexes"), command=update_all_indexes).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(right_btn_frame, text=self.t("delete_all_dbs"), command=delete_all_dbs).pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Pack status label at the bottom (ensure it's visible)
+        status_label.pack(pady=(5, 0), anchor=tk.W, fill=tk.X)
+        
+        # Initial status update
+        update_status_label()
         
         # Bind events
-        folder_list.bind('<Double-Button-1>', lambda e: open_folder_location())
+        folder_list.bind('<Double-Button-1>', lambda e: open_location())
         folder_list.bind('<Delete>', lambda e: remove_folder())
-        folder_list.bind('<Return>', lambda e: open_folder_location())
+        folder_list.bind('<Return>', lambda e: open_location())
         
         # Keyboard shortcuts
         manager.bind('<Control-a>', lambda e: folder_list.select_set(0, tk.END))
@@ -3611,6 +3724,88 @@ del "%~f0"
         
         # Enable saving after loading is complete
         self.loading_settings = False
+
+
+class IdleMonitor:
+    """Monitors system idle time and triggers indexing"""
+    def __init__(self, app):
+        self.app = app
+        self.running = False
+        self.idle_threshold = 300  # 5 minutes in seconds
+        self.is_indexing = False
+        self.stop_event = threading.Event()
+        
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self.monitor_loop, daemon=True)
+        self.thread.start()
+        
+    def get_idle_time(self):
+        """Get system idle time in seconds"""
+        if sys.platform == 'win32':
+            import ctypes
+            class LASTINPUTINFO(ctypes.Structure):
+                _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+            
+            lii = LASTINPUTINFO()
+            lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
+            if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+                millis = ctypes.windll.kernel32.GetTickCount() - lii.dwTime
+                return millis / 1000.0
+        return 0
+        
+    def monitor_loop(self):
+        while self.running:
+            try:
+                idle_time = self.get_idle_time()
+                
+                if idle_time > self.idle_threshold and not self.is_indexing:
+                    # Start indexing if idle and not already indexing
+                    # Only if use_index is enabled and there are indexed folders
+                    if self.app.use_index_var.get() and self.app.indexer.get_indexed_folders():
+                        self.start_indexing()
+                
+                elif idle_time < 1.0 and self.is_indexing:
+                    # Stop indexing if user activity detected
+                    self.stop_indexing()
+                    
+                time.sleep(1)
+            except Exception as e:
+                print(f"Idle monitor error: {e}")
+                time.sleep(5)
+                
+    def start_indexing(self):
+        self.is_indexing = True
+        self.stop_event.clear()
+        self.app.root.after(0, self.app.update_status, self.app.t("idle_indexing_started"))
+        
+        def run_update():
+            try:
+                # We need a way to stop the update_index process
+                # For now, we just let it run but check stop_event in callback
+                def progress(count):
+                    if self.stop_event.is_set():
+                        raise Exception("Stopped by user")
+                    # Optional: update status bar silently or with "Idle Indexing..."
+                    pass
+                        
+                self.app.indexer.update_index(progress_callback=progress)
+                
+                if not self.stop_event.is_set():
+                    self.app.root.after(0, self.app.update_status, self.app.t("index_complete"))
+            except:
+                pass
+            finally:
+                self.is_indexing = False
+                if self.stop_event.is_set():
+                    self.app.root.after(0, self.app.update_status, self.app.t("idle_indexing_stopped"))
+        
+        threading.Thread(target=run_update, daemon=True).start()
+        
+    def stop_indexing(self):
+        if self.is_indexing:
+            self.stop_event.set()
+            self.is_indexing = False
 
 
 def main():
