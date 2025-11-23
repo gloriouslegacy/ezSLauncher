@@ -4,10 +4,12 @@ Advanced file search with execution capabilities and context menu integration
 """
 
 import os
+import time
 import sys
 import json
 import subprocess
 import threading
+import concurrent.futures
 import re
 import configparser
 import shutil
@@ -68,12 +70,25 @@ def resource_path(relative_path):
 
 class FileItem:
     """Represents a file item in the search results"""
-    def __init__(self, path: str):
+    def __init__(self, path: str, size: int = None, mtime: float = None):
         self.path = path
         self.name = os.path.basename(path)
-        self.stat = os.stat(path)
-        self.size = self.stat.st_size
-        self.modified = datetime.fromtimestamp(self.stat.st_mtime)
+        
+        if size is not None and mtime is not None:
+            # Use provided metadata (from index)
+            self.size = size
+            self.modified = datetime.fromtimestamp(mtime)
+            self.extension = os.path.splitext(path)[1]
+        else:
+            # Fallback to disk access
+            try:
+                self.stat = os.stat(path)
+                self.size = self.stat.st_size
+                self.modified = datetime.fromtimestamp(self.stat.st_mtime)
+            except:
+                self.size = 0
+                self.modified = datetime.now()
+                
         self.extension = os.path.splitext(path)[1]
         
     def get_size_str(self) -> str:
@@ -409,10 +424,101 @@ class FileIndexer:
             # Just estimating or we could query the DB after update
             pass
             
-    def search(self, search_filter: SearchFilter, search_dir: str = None, cancel_check=None) -> List[FileItem]:
-        """Search across all folder databases"""
-        results = []
+    def _search_folder_db(self, folder_row, search_filter, search_dir, cancel_check, callback):
+        """Helper method to search a single folder DB"""
+        if cancel_check and cancel_check():
+            return
+
+        folder_path = folder_row['path']
+        db_filename = folder_row['db_filename']
         
+        # If search_dir is specified, check if this indexed folder is relevant
+        if search_dir:
+            search_dir_norm = os.path.normpath(search_dir)
+            folder_path_norm = os.path.normpath(folder_path)
+            
+            if not (folder_path_norm.startswith(search_dir_norm) or search_dir_norm.startswith(folder_path_norm)):
+                return
+        
+        db_path = self.get_folder_db_path(db_filename)
+        if not os.path.exists(db_path):
+            return
+            
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            query = "SELECT path, size, mtime FROM files WHERE 1=1"
+            params = []
+            
+            # Apply directory filter if it's more specific than the indexed folder
+            if search_dir and search_dir_norm.startswith(folder_path_norm):
+                query += " AND path LIKE ?"
+                params.append(f"{search_dir_norm}%")
+            
+            # Apply basic SQL filters if not using regex
+            if not search_filter.use_regex and search_filter.name_filters:
+                conditions = []
+                for nf in search_filter.name_filters:
+                    conditions.append("name LIKE ?")
+                    params.append(f"%{nf}%")
+                if conditions:
+                    query += " AND (" + " OR ".join(conditions) + ")"
+                    
+            if not search_filter.use_regex and search_filter.ext_filters:
+                conditions = []
+                for ef in search_filter.ext_filters:
+                    conditions.append("extension LIKE ?")
+                    params.append(f"%{ef}%")
+                if conditions:
+                    query += " AND (" + " OR ".join(conditions) + ")"
+            
+            cursor.execute(query, params)
+            
+            batch_size = 500
+            current_batch = []
+            count = 0
+            
+            for row in cursor.fetchall():
+                if cancel_check and count % 100 == 0 and cancel_check():
+                    break
+                    
+                try:
+                    item = FileItem(row['path'], row['size'], row['mtime'])
+                    
+                    if search_filter.matches(item):
+                        current_batch.append(item)
+                        
+                        if len(current_batch) >= batch_size:
+                            if callback:
+                                callback(current_batch)
+                                time.sleep(0.02)
+                            current_batch = []
+                            
+                    count += 1
+                except:
+                    pass
+            
+            # Send remaining items
+            if current_batch and callback:
+                callback(current_batch)
+                
+            conn.close()
+            
+        except Exception as e:
+            print(f"Error searching DB {db_path}: {e}")
+
+    def search(self, search_filter: SearchFilter, search_dir: str = None, cancel_check=None, callback=None):
+        """
+        Search across all folder databases
+        
+        Args:
+            search_filter: Filter criteria
+            search_dir: Optional directory to limit search scope
+            cancel_check: Function returning True if search should be cancelled
+            callback: Function to call with a batch of results (List[FileItem])
+        """
         # Get all folder DBs
         conn_master = sqlite3.connect(self.master_db_path)
         conn_master.row_factory = sqlite3.Row
@@ -421,81 +527,30 @@ class FileIndexer:
         folders = cursor_master.fetchall()
         conn_master.close()
         
-        for folder_row in folders:
-            if cancel_check and cancel_check():
-                break
+        # Use ThreadPoolExecutor for parallel search
+        # Limit max workers to avoid overwhelming the system, but at least 1
+        max_workers = min(32, (os.cpu_count() or 1) * 4)
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for folder_row in folders:
+                if cancel_check and cancel_check():
+                    break
                 
-            folder_path = folder_row['path']
-            db_filename = folder_row['db_filename']
+                future = executor.submit(
+                    self._search_folder_db, 
+                    folder_row, 
+                    search_filter, 
+                    search_dir, 
+                    cancel_check, 
+                    callback
+                )
+                futures.append(future)
             
-            # If search_dir is specified, check if this indexed folder is relevant
-            if search_dir:
-                # Check if indexed folder is inside search_dir OR search_dir is inside indexed folder
-                # (Simple string check, strict path logic is better but this suffices for now)
-                search_dir_norm = os.path.normpath(search_dir)
-                folder_path_norm = os.path.normpath(folder_path)
-                
-                if not (folder_path_norm.startswith(search_dir_norm) or search_dir_norm.startswith(folder_path_norm)):
-                    continue
+            # Wait for all to complete
+            concurrent.futures.wait(futures)
             
-            db_path = self.get_folder_db_path(db_filename)
-            if not os.path.exists(db_path):
-                continue
-                
-            try:
-                conn = sqlite3.connect(db_path)
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                
-                query = "SELECT path FROM files WHERE 1=1"
-                params = []
-                
-                # Apply directory filter if it's more specific than the indexed folder
-                if search_dir and search_dir_norm.startswith(folder_path_norm):
-                    query += " AND path LIKE ?"
-                    params.append(f"{search_dir_norm}%")
-                
-                # Apply basic SQL filters if not using regex
-                if not search_filter.use_regex and search_filter.name_filters:
-                    conditions = []
-                    for nf in search_filter.name_filters:
-                        conditions.append("name LIKE ?")
-                        params.append(f"%{nf}%")
-                    if conditions:
-                        query += " AND (" + " OR ".join(conditions) + ")"
-                        
-                if not search_filter.use_regex and search_filter.ext_filters:
-                    conditions = []
-                    for ef in search_filter.ext_filters:
-                        conditions.append("extension LIKE ?")
-                        params.append(f"%{ef}%")
-                    if conditions:
-                        query += " AND (" + " OR ".join(conditions) + ")"
-                
-                cursor.execute(query, params)
-                
-                count = 0
-                for row in cursor.fetchall():
-                    if cancel_check and count % 100 == 0 and cancel_check():
-                        break
-                        
-                    try:
-                        # We trust the DB record, but verify existence if needed
-                        # For speed, we might skip existence check, but let's keep it for correctness
-                        if os.path.exists(row['path']):
-                            item = FileItem(row['path'])
-                            if search_filter.matches(item):
-                                results.append(item)
-                        count += 1
-                    except:
-                        pass
-                        
-                conn.close()
-                
-            except Exception as e:
-                print(f"Error searching DB {db_path}: {e}")
-                
-        return results
+        return []
     
     def get_stats(self):
         """Get index statistics (total files, total folders)"""
@@ -1743,27 +1798,38 @@ class FileSearchApp:
         try:
             self.root.after(0, self.update_status, self.t("searching"))
             
-            # Get results with cancellation check
-            results = self.indexer.search(search_filter, search_dir=search_dir, cancel_check=lambda: self.search_cancelled)
+            # Track total results
+            self.total_found = 0
+            
+            def on_batch_results(batch):
+                if self.search_cancelled:
+                    return
+                
+                # Update total count
+                self.total_found += len(batch)
+                count = self.total_found
+                
+                # Add to internal list for export
+                self.search_results.extend(batch)
+                
+                # Schedule UI update
+                self.root.after(0, self.add_results_batch, batch)
+                self.root.after(0, self.results_label.config, {"text": self.t("results") + f" {count}"})
+            
+            # Get results with cancellation check and callback
+            self.indexer.search(
+                search_filter, 
+                search_dir=search_dir, 
+                cancel_check=lambda: self.search_cancelled,
+                callback=on_batch_results
+            )
             
             if self.search_cancelled:
                 self.root.after(0, self.update_status, "Search cancelled")
                 return
             
-            # Add to search_results for export functionality
-            self.search_results.extend(results)
-            
-            # Add results in batches for better performance
-            batch_size = 100
-            for i in range(0, len(results), batch_size):
-                if self.search_cancelled:
-                    break
-                batch = results[i:i+batch_size]
-                self.root.after(0, self.add_results_batch, batch)
-                self.root.after(0, self.results_label.config, {"text": self.t("results") + f" {min(i+batch_size, len(results))}"})
-            
             if not self.search_cancelled:
-                count = len(results)
+                count = self.total_found
                 self.root.after(0, self.results_label.config, {"text": self.t("results") + f" {count}"})
                 self.root.after(0, self.update_status, self.t("found_files").format(count))
             
@@ -1864,7 +1930,13 @@ class FileSearchApp:
                     
                     def run_single_update():
                         try:
-                            self.indexer.update_folder_index(path)
+                            def progress(count):
+                                try:
+                                    self.root.after(0, status_label.config, {"text": self.t("indexing_progress").format(count)})
+                                except:
+                                    pass
+                                    
+                            self.indexer.update_folder_index(path, progress_callback=progress)
                             self.root.after(0, update_status_label)
                             self.root.after(0, status_label.config, {"text": self.t("index_complete")})
                         except Exception as e:
