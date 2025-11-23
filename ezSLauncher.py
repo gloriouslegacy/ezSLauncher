@@ -1876,7 +1876,7 @@ class FileSearchApp:
                     return
                 
             search_dir = self.search_dir.get() if self.search_dir.get() else None
-            thread = threading.Thread(target=self.search_index, args=(search_filter, search_dir, self.exclude_path_filter.get()), daemon=True)
+            thread = threading.Thread(target=self.search_index, args=(search_filter, search_dir), daemon=True)
         else:
             search_dir = self.search_dir.get()
             if not search_dir or not os.path.isdir(search_dir):
@@ -1900,7 +1900,7 @@ class FileSearchApp:
         
         thread.start()
 
-    def search_index(self, search_filter: SearchFilter, search_dir: str = None, exclude_path_filter: str = None):
+    def search_index(self, search_filter: SearchFilter, search_dir: str = None):
         """Search using indexer with cancellation support"""
         try:
             self.root.after(0, self.update_status, self.t("searching"))
@@ -1928,8 +1928,7 @@ class FileSearchApp:
                 search_filter, 
                 search_dir=search_dir, 
                 cancel_check=lambda: self.search_cancelled,
-                callback=on_batch_results,
-                exclude_path_filter=exclude_path_filter
+                callback=on_batch_results
             )
             
             if self.search_cancelled:
