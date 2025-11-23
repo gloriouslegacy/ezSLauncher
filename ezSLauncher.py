@@ -618,7 +618,7 @@ class FileSearchApp:
         "info": "Info",
         "already_indexed": "'{0}' is already indexed.",
         "parent_indexed": "Parent folder '{0}' is already indexed.\n\n'{1}' will be automatically included.\n\nDo you still want to add it separately?",
-        "folder_added": "Added: {0}\n\nClick 'Update Index Now' to index this folder.",
+        "folder_added": "Added: {0}\n\n index this folder.",
         "select_folder_to_remove": "Please select a folder to remove.",
         "confirm_remove_single": "Remove this folder from index?\n\n{0}\n\nThis will also delete all indexed files from this folder.",
         "confirm_remove_multiple": "Remove {0} folders from index?\n\nThis will also delete all indexed files from these folders.",
