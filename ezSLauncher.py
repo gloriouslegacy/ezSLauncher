@@ -3716,7 +3716,7 @@ del "%~f0"
             self.name_filter.insert(0, self.config.get("name_filter", ""))
             self.ext_filter.insert(0, self.config.get("ext_filter", ""))
             self.path_filter.insert(0, self.config.get("path_filter", ""))
-            self.exclude_path_filter.insert(0, self.config.get("exclude_path_filter", ""))
+            self.exclude_path_filter.insert(0, self.config.get("exclude_path_filter", "appdata, onedrive"))
             self.search_dir.insert(0, self.config.get("search_dir", default_dir))
             self.recursive_var.set(self.config.get("recursive", True))
             
@@ -3732,6 +3732,7 @@ del "%~f0"
             print(f"Settings loaded: use_index={use_index}")  # Debug output
         else:
             self.search_dir.insert(0, default_dir)
+            self.exclude_path_filter.insert(0, "appdata, onedrive")
             print("No config found, using defaults")  # Debug output
         
         # Enable saving after loading is complete
