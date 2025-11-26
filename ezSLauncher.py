@@ -846,6 +846,7 @@ class FileSearchApp:
         self.is_searching = False
         self.search_cancelled = False
         self.save_timer = None  # For debouncing save_settings
+        self.index_manager_window = None  # Track Index Manager window
         
         # Dark mode state
         self.dark_mode = self.config.get("dark_mode", False)
@@ -1954,10 +1955,27 @@ class FileSearchApp:
 
     def show_index_manager(self):
         """Show index management dialog with enhanced features"""
+        # Check if Index Manager is already open
+        if self.index_manager_window is not None and self.index_manager_window.winfo_exists():
+            # Bring existing window to front
+            self.index_manager_window.lift()
+            self.index_manager_window.focus_force()
+            return
+        
         manager = tk.Toplevel(self.root)
         manager.title(self.t("index_manager_title"))
-        manager.geometry("773x500")
+        manager.geometry("773x453")
         self.set_window_icon(manager)
+        
+        # Store reference to window
+        self.index_manager_window = manager
+        
+        # Clear reference when window is closed
+        def on_close():
+            self.index_manager_window = None
+            manager.destroy()
+        
+        manager.protocol("WM_DELETE_WINDOW", on_close)
         
         # Apply theme
         theme = self.themes["dark" if self.dark_mode else "light"]
@@ -1972,22 +1990,51 @@ class FileSearchApp:
         ttk.Label(main_container, text=self.t("indexed_folders")).pack(pady=(0, 5), anchor=tk.W)
         
         list_frame = ttk.Frame(main_container)
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        list_frame.pack(fill=tk.BOTH, expand=False, pady=5)
         
-        folder_list = tk.Listbox(list_frame, height=15, selectmode=tk.EXTENDED)
-        folder_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Create Treeview for folder list
+        columns = ("path", "last_updated", "status")
+        folder_tree = ttk.Treeview(list_frame, columns=columns, show="tree headings", selectmode=tk.EXTENDED, height=10)
         
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=folder_list.yview)
+        # Configure columns
+        folder_tree.heading("#0", text="")
+        folder_tree.heading("path", text=self.t("path") if hasattr(self, 't') else "Path")
+        folder_tree.heading("last_updated", text=self.t("last_updated") if hasattr(self, 't') else "Last Updated")
+        folder_tree.heading("status", text=self.t("status") if hasattr(self, 't') else "Status")
+        
+        folder_tree.column("#0", width=30, stretch=False)
+        folder_tree.column("path", width=400, stretch=True)
+        folder_tree.column("last_updated", width=150, stretch=False)
+        folder_tree.column("status", width=100, stretch=False)
+        
+        folder_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=folder_tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        folder_list.config(yscrollcommand=scrollbar.set)
+        folder_tree.config(yscrollcommand=scrollbar.set)
         
-        # Apply theme to listbox
-        folder_list.configure(
-            bg=theme["entry_bg"],
-            fg=theme["entry_fg"],
-            selectbackground=theme["select_bg"],
-            selectforeground=theme["select_fg"]
-        )
+        # Apply theme to treeview
+        style = ttk.Style()
+        style.configure("IndexManager.Treeview",
+                       background=theme["entry_bg"],
+                       foreground=theme["entry_fg"],
+                       fieldbackground=theme["entry_bg"],
+                       borderwidth=0)
+        style.configure("IndexManager.Treeview.Heading",
+                       background=theme["button_bg"],
+                       foreground=theme["fg"],
+                       borderwidth=1,
+                       relief="flat")
+        style.map("IndexManager.Treeview",
+                 background=[('selected', theme["select_bg"])],
+                 foreground=[('selected', theme["select_fg"])])
+        
+        folder_tree.configure(style="IndexManager.Treeview")
+        
+        # Store reference for zebra striping
+        folder_tree.tag_configure('oddrow', background=theme["entry_bg"])
+        folder_tree.tag_configure('evenrow', background=theme.get("tree_even_bg", theme["entry_bg"]))
         
         # Status label (create early for use in functions)
         status_label = ttk.Label(main_container, text="", anchor=tk.W)
@@ -2010,14 +2057,35 @@ class FileSearchApp:
         # Populate list
         def refresh_list():
             try:
-                folder_list.delete(0, tk.END)
+                # Clear existing items
+                for item in folder_tree.get_children():
+                    folder_tree.delete(item)
+                
                 # Get details including timestamp
                 folders_details = self.indexer.get_indexed_folders_details()
-                for path, last_updated in folders_details:
-                    display_text = path
+                
+                for idx, (path, last_updated) in enumerate(folders_details):
+                    # Determine status
+                    if os.path.exists(path):
+                        status = "✓ OK"
+                    else:
+                        status = "✗ Missing"
+                    
+                    # Format last updated
                     if last_updated:
-                        display_text += f"  [Updated: {last_updated}]"
-                    folder_list.insert(tk.END, display_text)
+                        updated_str = last_updated
+                    else:
+                        updated_str = "Never"
+                    
+                    # Add to tree with zebra striping
+                    is_even = idx % 2 == 0
+                    row_tag = 'evenrow' if is_even else 'oddrow'
+                    
+                    folder_tree.insert("", "end", 
+                                      text="📁",
+                                      values=(path, updated_str, status),
+                                      tags=(row_tag,))
+                
                 update_status_label()
             except tk.TclError:
                 pass
@@ -2076,7 +2144,7 @@ class FileSearchApp:
                     )
         
         def remove_folder():
-            selection = folder_list.curselection()
+            selection = folder_tree.selection()
             if not selection:
                 messagebox.showwarning(
                     self.t("no_selection"),
@@ -2084,12 +2152,11 @@ class FileSearchApp:
                 )
                 return
             
-            # Get selected folders (need to parse path from display text)
+            # Get selected folders from tree values
             folders_to_remove = []
-            for i in selection:
-                display_text = folder_list.get(i)
-                # Extract path (remove timestamp if present)
-                path = display_text.split("  [Updated:")[0]
+            for item_id in selection:
+                values = folder_tree.item(item_id, "values")
+                path = values[0]  # First column is path
                 folders_to_remove.append(path)
                 
             if not folders_to_remove:
@@ -2112,7 +2179,7 @@ class FileSearchApp:
                     messagebox.showinfo(self.t("success"), self.t("folders_removed").format(len(folders_to_remove)))
                 
         def update_selected_index():
-            selection = folder_list.curselection()
+            selection = folder_tree.selection()
             if not selection:
                 messagebox.showwarning(
                     self.t("no_selection"),
@@ -2120,8 +2187,8 @@ class FileSearchApp:
                 )
                 return
             
-            display_text = folder_list.get(selection[0])
-            path = display_text.split("  [Updated:")[0]
+            values = folder_tree.item(selection[0], "values")
+            path = values[0]  # First column is path
             
             if not os.path.exists(path):
                 messagebox.showerror(self.t("error"), self.t("folder_not_found_msg").format(path))
@@ -2163,10 +2230,10 @@ class FileSearchApp:
             threading.Thread(target=run_update, daemon=True).start()
         
         def open_location():
-            selection = folder_list.curselection()
+            selection = folder_tree.selection()
             if selection:
-                display_text = folder_list.get(selection[0])
-                path = display_text.split("  [Updated:")[0]
+                values = folder_tree.item(selection[0], "values")
+                path = values[0]  # First column is path
                 if os.path.exists(path):
                     try:
                         if sys.platform == 'win32':
@@ -2209,13 +2276,13 @@ class FileSearchApp:
         update_status_label()
         
         # Bind events
-        folder_list.bind('<Double-Button-1>', lambda e: open_location())
-        folder_list.bind('<Delete>', lambda e: remove_folder())
-        folder_list.bind('<Return>', lambda e: open_location())
+        folder_tree.bind('<Double-Button-1>', lambda e: open_location())
+        folder_tree.bind('<Delete>', lambda e: remove_folder())
+        folder_tree.bind('<Return>', lambda e: open_location())
         
         # Keyboard shortcuts
-        manager.bind('<Control-a>', lambda e: folder_list.select_set(0, tk.END))
-        manager.bind('<Control-A>', lambda e: folder_list.select_set(0, tk.END))
+        manager.bind('<Control-a>', lambda e: folder_tree.selection_set(folder_tree.get_children()))
+        manager.bind('<Control-A>', lambda e: folder_tree.selection_set(folder_tree.get_children()))
 
     def rebuild_index(self):
         """Rebuild index from main menu"""
